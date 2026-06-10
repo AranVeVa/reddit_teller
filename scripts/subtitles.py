@@ -19,18 +19,12 @@ def _fmt_ts(seconds: float) -> str:
 
 
 def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3) -> list[dict]:
-    """
-    Toma los segmentos de Whisper y los agrupa en tarjetas de `words_per_card` palabras.
-    Si Whisper devuelve word-timestamps los usa; si no, distribuye uniformemente.
-    """
     all_words = []
 
     for seg in whisper_segments:
-        # Whisper con word_timestamps=True incluye seg["words"]
         if "words" in seg:
             all_words.extend(seg["words"])
         else:
-            # Fallback: distribuir palabras en el tiempo del segmento
             words  = seg["text"].strip().split()
             dur    = (seg["end"] - seg["start"]) / max(len(words), 1)
             for j, w in enumerate(words):
@@ -53,10 +47,6 @@ def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3) 
 
 
 def generate_srt(audio_path: Path, words_per_card: int = 3) -> Path:
-    """
-    Transcribe el audio con Whisper y genera un SRT word-by-word.
-    Devuelve la ruta del archivo .srt generado.
-    """
     audio_path = Path(audio_path)
     print(f"🎙️  Transcribiendo {audio_path.name}…")
 
@@ -92,11 +82,17 @@ def _parse_srt(srt_path: Path) -> list[tuple[float, float, str]]:
     return [(to_sec(s), to_sec(e), t.replace("\n", " ")) for s, e, t in entries]
 
 
-def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, *, highlight: bool = False, active_word_color: str = "yellow", position_y: float = 0.65, words_per_card: int = 3, animate: bool = False) -> Path:
-    """
-    Quema los subtítulos del SRT sobre el video.
-    Devuelve la ruta del video final.
-    """
+def burn_subtitles(
+    video_path: Path,
+    srt_path: Path,
+    output_path: Path,
+    *,
+    highlight: bool = False,
+    active_word_color: str = "yellow",
+    position_y: float = 0.65,
+    words_per_card: int = 3,
+    animate: bool = False,
+) -> Path:
     video_path  = Path(video_path)
     output_path = Path(output_path)
 
@@ -104,8 +100,12 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, *, highl
     subtitles = _parse_srt(srt_path)
     clips     = [video]
 
+    # Ancho fijo para que el TextClip no corte texto
+    SUBTITLE_W = int(video.w * 0.9)  # 90% del ancho del video
+
     for start, end, text in subtitles:
         duration = end - start
+
         if not highlight:
             txt = TextClip(
                 text=text,
@@ -114,78 +114,86 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, *, highl
                 color="white",
                 stroke_color="black",
                 stroke_width=3,
-                method="label",
+                method="caption",
+                size=(SUBTITLE_W, 120),  # ancho fijo, alto automático
             )
-            # Compute pixel Y and clamp so the subtitle doesn't go off-screen
-            y_top = int(video.h * position_y) - (txt.h // 2)
+            y_top = int(video.h * position_y)
             y_top = max(0, min(y_top, max(0, video.h - txt.h)))
+
             if not animate:
                 txt = txt.with_position(("center", y_top)).with_start(start).with_duration(duration)
             else:
-                anim_offset = 10
                 anim_dur = min(0.15, max(0.05, duration * 0.2))
-                posfunc = lambda t, s=start, y=y_top, d=anim_dur, o=anim_offset: ("center", y - int(max(0, min((t - s) / d, 1)) * o))
+                posfunc = lambda t, s=start, y=y_top, d=anim_dur: (
+                    "center",
+                    y - int(max(0, min((t - s) / d, 1)) * 10)
+                )
                 txt = txt.with_position(posfunc).with_start(start).with_duration(duration)
+
             clips.append(txt)
+
         else:
-            # Highlight mode: render each word as its own TextClip and highlight
-            # the "active" word (middle word) in `active_word_color` while the
-            # others stay white. NOTE: true word-by-word highlighting requires
-            # per-word timestamps and rendering each word at its own timings.
-            # Here we implement a simplified visual: for each subtitle card
-            # (usually up to `words_per_card` words) we color the center word
-            # to make it visually active for the whole card duration.
+            # Highlight por palabra: cada palabra tiene su propio clip y timing
             words = text.split()
+            word_duration = duration / max(len(words), 1)
+
             try:
                 word_clips = []
                 for i, w in enumerate(words):
-                    color = active_word_color if i == (len(words) // 2) else "white"
-                    wc = TextClip(
-                        text=w,
-                        font=str(FONT_PATH),
-                        font_size=71,
-                        color=color,
-                        stroke_color="black",
-                        stroke_width=3,
-                        method="label",
-                    )
-                    word_clips.append(wc)
+                    word_start = start + i * word_duration
+                    word_end   = word_start + word_duration
 
-                total_w = sum(c.w for c in word_clips)
-                max_h = max((c.h for c in word_clips), default=0)
-                x0 = (video.w - total_w) // 2
-                y_center = int(video.h * position_y)
+                    # Renderizar todas las palabras en blanco en cada tarjeta
+                    # pero la palabra activa (i) en color destacado
+                    row_clips = []
+                    for j, ww in enumerate(words):
+                        color = active_word_color if j == i else "white"
+                        wc = TextClip(
+                            text=ww,
+                            font=str(FONT_PATH),
+                            font_size=71,
+                            color=color,
+                            stroke_color="black",
+                            stroke_width=3,
+                            method="caption",
+                            size=(SUBTITLE_W // max(len(words), 1), None),
+                        )
+                        row_clips.append(wc)
 
-                # Compute top Y and clamp to keep words fully visible
-                y_top = y_center - (max_h // 2)
-                y_top = max(0, min(y_top, max(0, video.h - max_h)))
+                    total_w  = sum(c.w for c in row_clips)
+                    max_h    = max(c.h for c in row_clips)
+                    x0       = (video.w - total_w) // 2
+                    y_top    = int(video.h * position_y) - (max_h // 2)
+                    y_top    = max(0, min(y_top, max(0, video.h - max_h)))
 
-                offset = 0
-                anim_offset = 10
-                anim_dur = min(0.15, max(0.05, duration * 0.2))
-                for wc in word_clips:
-                    xv = x0 + offset
-                    if not animate:
-                        pos = (xv, y_top)
-                        wc = wc.with_position(pos).with_start(start).with_duration(duration)
-                    else:
-                        posfunc = (lambda xv, s=start, y=y_top, d=anim_dur, o=anim_offset: (lambda t: (xv, y - int(max(0, min((t - s) / d, 1)) * o))))(xv, start, y_top, anim_dur, anim_offset)
-                        wc = wc.with_position(posfunc).with_start(start).with_duration(duration)
-                    clips.append(wc)
-                    offset += wc.w
-            except Exception:
-                # Fallback to plain single-line subtitle if something fails
+                    offset = 0
+                    for wc in row_clips:
+                        xv = x0 + offset
+                        if not animate:
+                            wc = wc.with_position((xv, y_top)).with_start(word_start).with_duration(word_duration)
+                        else:
+                            anim_dur = min(0.15, max(0.05, word_duration * 0.2))
+                            posfunc = (lambda xv=xv, y=y_top, s=word_start, d=anim_dur: (
+                                lambda t: (xv, y - int(max(0, min((t - s) / d, 1)) * 10))
+                            ))()
+                            wc = wc.with_position(posfunc).with_start(word_start).with_duration(word_duration)
+                        clips.append(wc)
+                        offset += wc.w
+
+            except Exception as e:
+                print(f"⚠️  Fallback subtitle para: {text} ({e})")
                 txt = (
                     TextClip(
                         text=text,
                         font=str(FONT_PATH),
-                        font_size=72,
+                        font_size=71,
                         color="white",
                         stroke_color="black",
                         stroke_width=3,
-                        method="label",
+                        method="caption",
+                        size=(SUBTITLE_W, 120),
                     )
-                    .with_position(("center", position_y), relative=True)
+                    .with_position(("center", int(video.h * position_y)), relative=False)
                     .with_start(start)
                     .with_duration(duration)
                 )
