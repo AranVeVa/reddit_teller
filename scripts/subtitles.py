@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import SUBS_DIR, FONT_PATH
+from scripts import termui as ui
 
 
 # ─── SRT generation ───────────────────────────────────────────────────────────
@@ -48,7 +49,7 @@ def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3) 
 
 def generate_srt(audio_path: Path, words_per_card: int = 3) -> Path:
     audio_path = Path(audio_path)
-    print(f"🎙️  Transcribiendo {audio_path.name}…")
+    ui.info(f"Transcribiendo {audio_path.name}...")
 
     model    = whisper.load_model("base")
     result   = model.transcribe(str(audio_path), word_timestamps=True)
@@ -61,7 +62,7 @@ def generate_srt(audio_path: Path, words_per_card: int = 3) -> Path:
         for i, card in enumerate(cards, 1):
             f.write(f"{i}\n{_fmt_ts(card['start'])} --> {_fmt_ts(card['end'])}\n{card['text']}\n\n")
 
-    print(f"✅ SRT generado: {srt_path}  ({len(cards)} tarjetas)")
+    ui.success(f"SRT generado: {srt_path}  ({len(cards)} tarjetas)")
     return srt_path
 
 
@@ -118,5 +119,5 @@ def burn_subtitles(
 
     final = CompositeVideoClip(clips)
     final.write_videofile(str(output_path), codec="libx264", audio_codec="aac", fps=video.fps)
-    print(f"✅ Video con subtítulos: {output_path}")
+    ui.success(f"Video con subtítulos: {output_path}")
     return output_path

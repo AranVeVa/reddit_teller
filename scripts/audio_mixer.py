@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import MIXED_DIR, BACKGROUND_VOLUME_DB
+from scripts import termui as ui
 
 
 def mix_audio(narration_path: Path, background_path: Path) -> Path | None:
@@ -38,10 +39,10 @@ def mix_audio(narration_path: Path, background_path: Path) -> Path | None:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            print(f"❌ Error ffmpeg:\n{result.stderr[-500:]}")
+            ui.error(f"Error ffmpeg:\n{result.stderr[-500:]}")
             return None
-        print(f"✅ Audio mezclado: {output}")
+        ui.success(f"Audio mezclado: {output}")
         return output
     except FileNotFoundError:
-        print("❌ ffmpeg no encontrado. Instálalo con: sudo apt install ffmpeg")
+        ui.error("ffmpeg no encontrado. Instálalo con: sudo apt install ffmpeg")
         return None

@@ -14,6 +14,7 @@ from scripts.voice       import archivo_a_audio
 from scripts.audio_mixer import mix_audio
 from scripts.video       import create_video
 from scripts.subtitles   import generate_srt, burn_subtitles
+from scripts import termui as ui
 
 
 CHARS_PER_SECOND = 14
@@ -28,16 +29,16 @@ DURACION_PRESETS = {
 
 
 def ask(prompt: str) -> bool:
-    return input(f"\n{prompt} [s/n]: ").strip().lower() == "s"
+    return input(f"\n{ui.prompt_str(prompt)} [s/n]: ").strip().lower() == "s"
 
 
 def ask_int(prompt: str, default: int) -> int:
-    raw = input(f"{prompt} [{default}]: ").strip()
+    raw = input(f"{ui.prompt_str(prompt)} [{default}]: ").strip()
     return int(raw) if raw.isdigit() else default
 
 
 def elegir_duracion() -> tuple[int, int]:
-    print("\n📐 ¿Qué duración quieres por historia?")
+    ui.info("\n¿Qué duración quieres por historia?")
     print()
     for key, (label, segs) in DURACION_PRESETS.items():
         if segs > 0:
@@ -63,25 +64,26 @@ def elegir_duracion() -> tuple[int, int]:
         min_chars = int(segs * CHARS_PER_SECOND * 0.7)
         max_chars = int(segs * CHARS_PER_SECOND * 1.5)
 
-    print(f"\n✅ {label}: buscando historias de {min_chars}–{max_chars} caracteres")
+    ui.success(f"{label}: buscando historias de {min_chars}–{max_chars} caracteres")
     return min_chars, max_chars
 
 
 def main():
-    print("=" * 50)
-    print("       reddit_teller 2.0")
-    print("=" * 50)
+    ui.header("reddit_teller 2.0")
 
-    url = input("\nURL o nombre del subreddit: ").strip()
+    # Status steps: fetch, audio, mix, video, subtitles
+    status = ui.Status(5)
+
+    url = input(f"\n{ui.prompt_str('URL o nombre del subreddit: ')}").strip()
     subreddit = url.split("/r/")[-1].strip("/").split("/")[0] if "/r/" in url else url
 
     limite = ask_int("¿Cuántas historias incluir en el video?", 1)
 
     min_chars, max_chars = elegir_duracion()
 
-    orden = input("\nOrden de posts [hot/new/top] (hot): ").strip() or "hot"
+    orden = input(f"\n{ui.prompt_str('Orden de posts [hot/new/top] (hot): ')}").strip() or "hot"
 
-    print(f"\n🔍 Obteniendo historias de r/{subreddit}…")
+    ui.info(f"Obteniendo historias de r/{subreddit}...")
     historias = obtener_historias(
         subreddit,
         limite=limite,
@@ -91,8 +93,8 @@ def main():
     )
 
     if not historias:
-        print("❌ No se encontraron historias con esos parámetros.")
-        print(f"   Intenta ampliar la duración o cambiar el orden (hot/new/top).")
+        ui.error("No se encontraron historias con esos parámetros.")
+        ui.info("Intenta ampliar la duración o cambiar el orden (hot/new/top).")
         return
 
     mostrar_historias(historias)
@@ -101,40 +103,43 @@ def main():
     total_segs  = total_chars / CHARS_PER_SECOND
     minutos     = int(total_segs // 60)
     segundos    = int(total_segs % 60)
-    print(f"\n⏱️  Duración estimada del video: {minutos}m {segundos}s")
+    ui.info(f"Duración estimada del video: {minutos}m {segundos}s")
 
     archivo_txt = guardar_historias(historias, subreddit)
 
     if not ask("¿Continuar con la generación de audio (ElevenLabs)?"):
-        print("👋 Proceso terminado.")
+        ui.info("Proceso terminado.")
         return
 
     audio_path = archivo_a_audio(archivo_txt)
     if not audio_path:
-        print("❌ Error generando audio. Saliendo.")
+        ui.error("Error generando audio. Saliendo.")
         return
+    status.update(message="Audio generado")
 
     if not ask("¿Continuar con la mezcla de audio?"):
-        print("👋 Proceso terminado.")
+        ui.info("Proceso terminado.")
         return
 
     mixed_path = mix_audio(audio_path, BACKGROUND_AUDIO)
     if not mixed_path:
-        print("❌ Error mezclando audio. Saliendo.")
+        ui.error("Error mezclando audio. Saliendo.")
         return
+    status.update(message="Audio mezclado")
 
     if not ask("¿Continuar con la creación del video?"):
-        print("👋 Proceso terminado.")
+        ui.info("Proceso terminado.")
         return
 
     start_sec  = ask_int("¿Desde qué segundo del video de fondo empezar?", 0)
     video_path = create_video(mixed_path, BACKGROUND_VIDEO, subreddit, start_second=start_sec)
     if not video_path:
-        print("❌ Error creando video. Saliendo.")
+        ui.error("Error creando video. Saliendo.")
         return
+    status.update(message="Video creado")
 
     if not ask("¿Agregar subtítulos al video?"):
-        print(f"\n✅ Listo. Video sin subtítulos: {video_path}")
+        ui.success(f"Listo. Video sin subtítulos: {video_path}")
         return
 
     words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
@@ -143,7 +148,8 @@ def main():
     final_path = video_path.parent / f"{video_path.stem}_subtitled.mp4"
     burn_subtitles(video_path, srt_path, final_path)
 
-    print(f"\n🎬 ¡Listo! Video final: {final_path}")
+    ui.success(f"Video final: {final_path}")
+    status.update(message="Subtítulos añadidos")
 
 
 if __name__ == "__main__":

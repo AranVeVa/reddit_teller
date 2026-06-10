@@ -10,6 +10,7 @@ from config import (
     REDDIT_USER_AGENT,
     HISTORIAS_DIR,
 )
+from scripts import termui as ui
 
 USED_IDS_FILE = HISTORIAS_DIR / "used_ids.txt"
 
@@ -87,19 +88,19 @@ def obtener_historias(
 
     historias.sort(key=lambda x: x["score"], reverse=True)
 
-    print("\n📊 Diagnóstico")
-    print(f"Posts revisados: {revisados}")
-    print(f"Descartados por tamaño: {descartados_tamano}")
-    print(f"Descartados por links: {descartados_links}")
-    print(f"Descartados por usados: {descartados_usados}")
-    print(f"Historias encontradas: {len(historias)}")
+    ui.info("Diagnóstico")
+    ui.info(f"Posts revisados: {revisados}")
+    ui.info(f"Descartados por tamaño: {descartados_tamano}")
+    ui.info(f"Descartados por links: {descartados_links}")
+    ui.info(f"Descartados por usados: {descartados_usados}")
+    ui.success(f"Historias encontradas: {len(historias)}")
 
     return historias
 
 
 def guardar_historias(historias: list[dict], subreddit: str) -> Path:
     if not historias:
-        print("⚠️  No se encontraron historias que cumplan los filtros.")
+        ui.warn("No se encontraron historias que cumplan los filtros.")
         return None
 
     archivo = HISTORIAS_DIR / f"{subreddit}.txt"
@@ -113,13 +114,11 @@ def guardar_historias(historias: list[dict], subreddit: str) -> Path:
             )
             _save_used_id(h["id"])
 
-    print(f"✅ {len(historias)} historias guardadas en {archivo}")
+    ui.success(f"{len(historias)} historias guardadas en {archivo}")
     return archivo
 
 def mostrar_historias(historias: list[dict]):
     for i, h in enumerate(historias, 1):
         preview = h["content"][:120].replace("\n", " ")
-        print(
-            f"\n[{i}] {h['title']} (score: {h['score']})"
-            f"\n    {preview}…"
-        )
+        ui.info(f"[{i}] {h['title']} (score: {h['score']})")
+        ui.info(f"    {preview}...")

@@ -5,6 +5,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import VIDEOS_DIR, VIDEO_WIDTH, VIDEO_HEIGHT
+from scripts import termui as ui
 
 
 def _crop_to_vertical(clip):
@@ -57,12 +58,12 @@ def create_video(
         video = video.with_audio(audio)
 
         video.write_videofile(str(output_path), codec="libx264", audio_codec="aac")
-        print(f"✅ Video base guardado: {output_path}")
+        ui.success(f"Video base guardado: {output_path}")
         return output_path
 
     except FileNotFoundError as e:
-        print(f"❌ Archivo no encontrado: {e}")
+        ui.error(f"Archivo no encontrado: {e}")
     except Exception as e:
-        print(f"❌ Error creando video: {e}")
+        ui.error(f"Error creando video: {e}")
 
     return None
