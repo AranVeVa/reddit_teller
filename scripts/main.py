@@ -16,12 +16,8 @@ from scripts.video       import create_video
 from scripts.subtitles   import generate_srt, burn_subtitles
 
 
-# ─── constantes ───────────────────────────────────────────────────────────────
-
-# Velocidad aproximada de narración de ElevenLabs: ~14 chars/segundo
 CHARS_PER_SECOND = 14
 
-# Presets de duración: (label, segundos_por_historia)
 DURACION_PRESETS = {
     "1": ("YouTube Shorts (~60s)",     60),
     "2": ("Video corto   (~3 min)",   180),
@@ -30,8 +26,6 @@ DURACION_PRESETS = {
     "5": ("Personalizado",             -1),
 }
 
-
-# ─── helpers ──────────────────────────────────────────────────────────────────
 
 def ask(prompt: str) -> bool:
     return input(f"\n{prompt} [s/n]: ").strip().lower() == "s"
@@ -43,10 +37,6 @@ def ask_int(prompt: str, default: int) -> int:
 
 
 def elegir_duracion() -> tuple[int, int]:
-    """
-    Le pregunta al usuario el formato deseado.
-    Devuelve (min_chars, max_chars) por historia.
-    """
     print("\n📐 ¿Qué duración quieres por historia?")
     print()
     for key, (label, segs) in DURACION_PRESETS.items():
@@ -65,13 +55,11 @@ def elegir_duracion() -> tuple[int, int]:
     label, segs = DURACION_PRESETS[opcion]
 
     if segs == -1:
-        # Personalizado
         min_segs = ask_int("Duración mínima por historia (segundos)", 30)
         max_segs = ask_int("Duración máxima por historia (segundos)", 120)
         min_chars = min_segs * CHARS_PER_SECOND
         max_chars = max_segs * CHARS_PER_SECOND
     else:
-        # Margen del ±20% para no ser demasiado estricto al filtrar posts
         min_chars = int(segs * CHARS_PER_SECOND * 0.8)
         max_chars = int(segs * CHARS_PER_SECOND * 1.2)
 
@@ -79,27 +67,20 @@ def elegir_duracion() -> tuple[int, int]:
     return min_chars, max_chars
 
 
-# ─── main ─────────────────────────────────────────────────────────────────────
-
 def main():
     print("=" * 50)
     print("       reddit_teller 2.0")
     print("=" * 50)
 
-    # 1. Subreddit
     url = input("\nURL o nombre del subreddit: ").strip()
     subreddit = url.split("/r/")[-1].strip("/").split("/")[0] if "/r/" in url else url
 
-    # 2. Cuántas historias
     limite = ask_int("¿Cuántas historias incluir en el video?", 1)
 
-    # 3. Duración por historia
     min_chars, max_chars = elegir_duracion()
 
-    # 4. Orden
     orden = input("\nOrden de posts [hot/new/top] (hot): ").strip() or "hot"
 
-    # 5. Scraping
     print(f"\n🔍 Obteniendo historias de r/{subreddit}…")
     historias = obtener_historias(
         subreddit,
@@ -116,7 +97,6 @@ def main():
 
     mostrar_historias(historias)
 
-    # Duración estimada total
     total_chars = sum(len(h["content"]) for h in historias)
     total_segs  = total_chars / CHARS_PER_SECOND
     minutos     = int(total_segs // 60)
@@ -129,7 +109,6 @@ def main():
         print("👋 Proceso terminado.")
         return
 
-    # 6. TTS
     audio_path = archivo_a_audio(archivo_txt)
     if not audio_path:
         print("❌ Error generando audio. Saliendo.")
@@ -139,7 +118,6 @@ def main():
         print("👋 Proceso terminado.")
         return
 
-    # 7. Mezcla
     mixed_path = mix_audio(audio_path, BACKGROUND_AUDIO)
     if not mixed_path:
         print("❌ Error mezclando audio. Saliendo.")
@@ -149,7 +127,6 @@ def main():
         print("👋 Proceso terminado.")
         return
 
-    # 8. Video base (9:16, sin subtítulos)
     start_sec  = ask_int("¿Desde qué segundo del video de fondo empezar?", 0)
     video_path = create_video(mixed_path, BACKGROUND_VIDEO, subreddit, start_second=start_sec)
     if not video_path:
@@ -160,14 +137,11 @@ def main():
         print(f"\n✅ Listo. Video sin subtítulos: {video_path}")
         return
 
-    # 9. Subtítulos word-by-word
     words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
     srt_path       = generate_srt(audio_path, words_per_card=words_per_card)
 
-    animate_subs = ask("¿Animar subtítulos?")
-
     final_path = video_path.parent / f"{video_path.stem}_subtitled.mp4"
-    burn_subtitles(video_path, srt_path, final_path, animate=animate_subs)
+    burn_subtitles(video_path, srt_path, final_path)
 
     print(f"\n🎬 ¡Listo! Video final: {final_path}")
 
