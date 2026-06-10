@@ -60,8 +60,8 @@ def elegir_duracion() -> tuple[int, int]:
         min_chars = min_segs * CHARS_PER_SECOND
         max_chars = max_segs * CHARS_PER_SECOND
     else:
-        min_chars = int(segs * CHARS_PER_SECOND * 0.8)
-        max_chars = int(segs * CHARS_PER_SECOND * 1.2)
+        min_chars = int(segs * CHARS_PER_SECOND * 0.7)
+        max_chars = int(segs * CHARS_PER_SECOND * 1.5)
 
     print(f"\n✅ {label}: buscando historias de {min_chars}–{max_chars} caracteres")
     return min_chars, max_chars
