@@ -53,8 +53,8 @@ def text_to_audio(texto: str, nombre: str) -> Path | None:
             return output
 
         elif resp.status_code in (401, 429):
-            # Key inválida o límite alcanzado → intenta la siguiente
-            print(f"⚠️  Key agotada/inválida ({resp.status_code}), rotando…")
+            print(f"⚠️ ElevenLabs respondió {resp.status_code}")
+            print(resp.text[:500])
             continue
 
         else:
