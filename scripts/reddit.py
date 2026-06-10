@@ -1,10 +1,14 @@
 import praw
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from config import (
-    REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT,
-    HISTORIAS_DIR
+    REDDIT_CLIENT_ID,
+    REDDIT_CLIENT_SECRET,
+    REDDIT_USER_AGENT,
+    HISTORIAS_DIR,
 )
 
 USED_IDS_FILE = HISTORIAS_DIR / "used_ids.txt"
@@ -34,32 +38,64 @@ def obtener_historias(
 ) -> list[dict]:
     reddit = _get_reddit()
     sub = reddit.subreddit(subreddit)
-    fetch_map = {"new": sub.new, "top": sub.top, "hot": sub.hot}
-    posts = fetch_map.get(orden, sub.hot)(limit=limite * 50)
+
+    fetch_map = {
+        "new": sub.new,
+        "top": sub.top,
+        "hot": sub.hot,
+    }
+
+    SEARCH_LIMIT = max(1000, limite * 100)
+    posts = fetch_map.get(orden, sub.hot)(limit=SEARCH_LIMIT)
 
     used_ids = _load_used_ids()
+
     seen = set()
     historias = []
 
+    descartados_usados = 0
+    descartados_tamano = 0
+    descartados_links = 0
+    revisados = 0
+
     for post in posts:
+        revisados += 1
+
         if post.id in seen or post.id in used_ids:
+            descartados_usados += 1
             continue
+
         if not (min_chars <= len(post.selftext) <= max_chars):
+            descartados_tamano += 1
             continue
+
         if "http" in post.selftext:
+            descartados_links += 1
             continue
+
         seen.add(post.id)
+
         historias.append({
-            "id":      post.id,
-            "title":   post.title,
+            "id": post.id,
+            "title": post.title,
             "content": post.selftext,
-            "score":   post.score,
+            "score": post.score,
         })
+
         if len(historias) >= limite:
             break
 
     historias.sort(key=lambda x: x["score"], reverse=True)
+
+    print("\n📊 Diagnóstico")
+    print(f"Posts revisados: {revisados}")
+    print(f"Descartados por tamaño: {descartados_tamano}")
+    print(f"Descartados por links: {descartados_links}")
+    print(f"Descartados por usados: {descartados_usados}")
+    print(f"Historias encontradas: {len(historias)}")
+
     return historias
+
 
 def guardar_historias(historias: list[dict], subreddit: str) -> Path:
     if not historias:
@@ -67,9 +103,14 @@ def guardar_historias(historias: list[dict], subreddit: str) -> Path:
         return None
 
     archivo = HISTORIAS_DIR / f"{subreddit}.txt"
+
     with open(archivo, "w", encoding="utf-8") as f:
         for h in historias:
-            f.write(f"{h['title']}\n{h['content']}\n{'—'*40}\n\n")
+            f.write(
+                f"{h['title']}\n"
+                f"{h['content']}\n"
+                f"{'—' * 40}\n\n"
+            )
             _save_used_id(h["id"])
 
     print(f"✅ {len(historias)} historias guardadas en {archivo}")
@@ -78,4 +119,7 @@ def guardar_historias(historias: list[dict], subreddit: str) -> Path:
 def mostrar_historias(historias: list[dict]):
     for i, h in enumerate(historias, 1):
         preview = h["content"][:120].replace("\n", " ")
-        print(f"\n[{i}] {h['title']} (score: {h['score']})\n    {preview}…")
+        print(
+            f"\n[{i}] {h['title']} (score: {h['score']})"
+            f"\n    {preview}…"
+        )
