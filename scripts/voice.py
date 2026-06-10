@@ -1,63 +1,77 @@
 import requests
-import os
+import sys
+import itertools
+from pathlib import Path
 
-# Tu clave de API de ElevenLabs
-api_key = " "  # Reemplaza con tu clave de API
-# ID de la voz que deseas usar (puedes obtenerlo de la respuesta del endpoint de voces)
-voice_id = "PUnlEy1oTSskvd4umq6Q"  # Reemplaza con el voice_id correcto
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import ELEVENLABS_API_KEYS, ELEVENLABS_VOICE_ID, AUDIOS_DIR
 
-# Función para convertir texto a audio
-def text_to_audio(txt_file):
-    try:
-        # Leer el archivo de texto
-        with open(txt_file, 'r') as file:
-            text = file.read()
+# Ciclo infinito sobre las keys → rota automáticamente
+_key_cycle = itertools.cycle(ELEVENLABS_API_KEYS)
 
-        # URL de la API de ElevenLabs con el voice_id
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-        
-        # Datos a enviar en la solicitud
-        data = {
-            "text": text,
-            "model_id": "eleven_multilingual_v2"  # Modelo de voz
-        }
 
-        # Cabeceras de la solicitud
+def _next_key() -> str:
+    return next(_key_cycle)
+
+
+def text_to_audio(texto: str, nombre: str) -> Path | None:
+    """
+    Convierte `texto` a MP3 usando ElevenLabs.
+    `nombre` define el nombre del archivo de salida (sin extensión).
+    Rota las API keys automáticamente si hay varias.
+    Devuelve la ruta del archivo generado, o None si falla.
+    """
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+    payload = {
+        "text": texto,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {
+            "stability": 0.4,
+            "similarity_boost": 0.8,
+        },
+    }
+
+    intentos = len(ELEVENLABS_API_KEYS) or 1
+
+    for _ in range(intentos):
+        api_key = _next_key()
         headers = {
             "xi-api-key": api_key,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
-        # Realizar la solicitud POST
-        response = requests.post(url, json=data, headers=headers)
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error de conexión: {e}")
+            continue
 
-        if response.status_code == 200:
-            # Generar el nombre del archivo de salida basado en el nombre del archivo de texto
-            base_name = os.path.splitext(os.path.basename(txt_file))[0]
-            output_directory = "/home/isael/proyecto_vid/OUTPUTS/audios"
-            os.makedirs(output_directory, exist_ok=True)
-            output_audio_file = os.path.join(output_directory, f"{base_name}.mp3")
-                    
-            # Guardar el archivo de audio
-            with open(output_audio_file, 'wb') as audio_file:
-                audio_file.write(response.content)
-            
-            print(f"El audio se ha guardado como {output_audio_file}")
-            return output_audio_file
+        if resp.status_code == 200:
+            output = AUDIOS_DIR / f"{nombre}.mp3"
+            output.write_bytes(resp.content)
+            print(f"✅ Audio guardado: {output}")
+            return output
+
+        elif resp.status_code in (401, 429):
+            # Key inválida o límite alcanzado → intenta la siguiente
+            print(f"⚠️  Key agotada/inválida ({resp.status_code}), rotando…")
+            continue
+
         else:
-            print(f"Error al generar el audio: {response.status_code} - {response.text}")
+            print(f"❌ Error ElevenLabs {resp.status_code}: {resp.text[:200]}")
             return None
-    except requests.exceptions.RequestException as e:
-        print(f"Error de conexión: {e}")
-        return None
-    except FileNotFoundError:
-        print(f"El archivo {txt_file} no existe.")
-        return None
-    except Exception as e:
-        print(f"Ocurrió un error inesperado: {e}")
+
+    print("❌ Todas las API keys fallaron.")
+    return None
+
+
+def archivo_a_audio(txt_path: Path) -> Path | None:
+    """Wrapper: lee un .txt y lo convierte a audio."""
+    txt_path = Path(txt_path)
+    if not txt_path.exists():
+        print(f"❌ Archivo no encontrado: {txt_path}")
         return None
 
-if __name__ == "__main__":
-    # Reemplaza 'example.txt' con el nombre del archivo de texto que deseas convertir a audio
-    txt_file = "/home/isael/proyecto_vid/historias/creepyencounters.txt"
-    text_to_audio(txt_file)
+    texto = txt_path.read_text(encoding="utf-8")
+    nombre = txt_path.stem
+    return text_to_audio(texto, nombre)

@@ -1,38 +1,68 @@
 from moviepy import VideoFileClip, AudioFileClip
-import os
+from moviepy.video.fx import Crop, Resize
+from pathlib import Path
+import sys
 
-# Función para crear un video con la narración
-def create_video_with_narration(audio_file, background_video, output_file, start_minute=1):
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import VIDEOS_DIR, VIDEO_WIDTH, VIDEO_HEIGHT
+
+
+def _crop_to_vertical(clip):
+    """Recorta y escala el clip a VIDEO_WIDTH x VIDEO_HEIGHT (default 1080x1920, 9:16)."""
+    target_ratio = VIDEO_WIDTH / VIDEO_HEIGHT
+    src_ratio    = clip.w / clip.h
+
+    if src_ratio > target_ratio:
+        # Video más ancho que 9:16 → recortar los lados
+        new_w = int(clip.h * target_ratio)
+        x1    = (clip.w - new_w) // 2
+        clip  = Crop(x1=x1, x2=x1 + new_w).apply(clip)
+    else:
+        # Video más alto que 9:16 → recortar arriba/abajo
+        new_h = int(clip.w / target_ratio)
+        y1    = (clip.h - new_h) // 2
+        clip  = Crop(y1=y1, y2=y1 + new_h).apply(clip)
+
+    return Resize((VIDEO_WIDTH, VIDEO_HEIGHT)).apply(clip)
+
+
+def create_video(
+    audio_path: Path,
+    background_video: Path,
+    output_name: str,
+    start_second: int = 0,
+) -> Path:
+    """
+    Crea el video base (sin subtítulos):
+      - Recorta el fondo a 9:16
+      - Ajusta la duración al audio
+      - Pega el audio
+    Devuelve la ruta del video generado.
+    """
+    audio_path       = Path(audio_path)
+    background_video = Path(background_video)
+    output_path      = VIDEOS_DIR / f"{output_name}.mp4"
+
     try:
-        # Cargar el video de fondo
-        video = VideoFileClip(background_video)
+        audio = AudioFileClip(str(audio_path))
+        video = VideoFileClip(str(background_video))
 
-        # Cargar el archivo de audio generado
-        audio = AudioFileClip(audio_file)
+        # Recortar a partir del segundo indicado
+        video = video.subclipped(start_second, start_second + audio.duration)
 
-        # Convertir el minuto de inicio a segundos
-        start_time = start_minute * 60
+        # Crop y escala a 9:16
+        video = _crop_to_vertical(video)
 
-        # Establecer la duración del video al tiempo del audio
-        video_duration = audio.duration  # Duración del audio
-        video = video.subclipped(start_time, start_time + video_duration)  # Recorta el video usando subclip
+        # Asignar audio
+        video = video.with_audio(audio)
 
-        # Asignar el audio al video
-        video = video.with_audio(audio)  # Usar with_audio para asignar el audio
+        video.write_videofile(str(output_path), codec="libx264", audio_codec="aac")
+        print(f"✅ Video base guardado: {output_path}")
+        return output_path
 
-        # Escribir el video final
-        video.write_videofile(output_file, codec="libx264", audio_codec="aac")
-    except FileNotFoundError:
-        print(f"El archivo {audio_file} o {background_video} no existe.")
-    except KeyError as e:
-        print(f"Error al leer el archivo de audio: {e}")
+    except FileNotFoundError as e:
+        print(f"❌ Archivo no encontrado: {e}")
     except Exception as e:
-        print(f"Ocurrió un error inesperado: {e}")
+        print(f"❌ Error creando video: {e}")
 
-# Prueba de la función
-if __name__ == "__main__":
-    output_file = "/home/isael/proyecto_vid/OUTPUTS/videos/Result_creepyencounters.mp4"
-    audio_file = "/home/isael/proyecto_vid/OUTPUTS/mixed_audios/mixed_creepyencounters.mp3"
-    background_video = "/home/isael/proyecto_vid/background_videos/Backrooms_(Level 94).mp4"
-    create_video_with_narration(audio_file, background_video, output_file, start_minute=0)
-    print(f"El video ha sido guardado como {output_file}")
+    return None

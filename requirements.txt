@@ -1,0 +1,5 @@
+praw
+requests
+moviepy
+openai-whisper
+python-dotenv

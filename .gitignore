@@ -1,0 +1,15 @@
+reddit-env/
+outputs/
+__pycache__/
+scripts/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+background_videos/
+background_audio/
+historias/
+fonts/
+.env
+.env.*
+.DS_Store
+*.log

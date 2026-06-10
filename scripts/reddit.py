@@ -1,55 +1,81 @@
 import praw
-import os
-import random
+import sys
+from pathlib import Path
 
-def obtener_historias(subreddit, limite, min_caracteres=300, max_caracteres=1500, orden='hot'):
-    """Obtiene historias de un subreddit con un mínimo y máximo de caracteres, sin repetirse, sin links y las más votadas."""
-    reddit = praw.Reddit(
-        client_id='EAhNUcnGpSMx9U4r_lz8yA',
-        client_secret='gHbSkcy4tKIh-UyvCKReThSP2y8SAw',
-        user_agent='story_teller'
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import (
+    REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT,
+    HISTORIAS_DIR
+)
+
+
+def _get_reddit():
+    return praw.Reddit(
+        client_id=REDDIT_CLIENT_ID,
+        client_secret=REDDIT_CLIENT_SECRET,
+        user_agent=REDDIT_USER_AGENT,
     )
-    
+
+
+def obtener_historias(
+    subreddit: str,
+    limite: int = 10,
+    min_chars: int = 300,
+    max_chars: int = 1500,
+    orden: str = "hot",
+) -> list[dict]:
+    """
+    Devuelve hasta `limite` historias del subreddit que cumplan los filtros.
+    Cada historia es un dict con: title, content, score, id.
+    """
+    reddit = _get_reddit()
+    sub = reddit.subreddit(subreddit)
+
+    fetch_map = {"new": sub.new, "top": sub.top, "hot": sub.hot}
+    posts = fetch_map.get(orden, sub.hot)(limit=limite * 50)
+
+    seen = set()
     historias = []
-    ids_recolectados = set()
-    if orden == 'new':
-        posts = reddit.subreddit(subreddit).new(limit=limite*50)
-    elif orden == 'top':
-        posts = reddit.subreddit(subreddit).top(limit=limite*50)
-    else:
-        posts = reddit.subreddit(subreddit).hot(limit=limite*50)
-    
-    for post in posts:  # Obtener más historias para tener una mejor selección
-        if post.id not in ids_recolectados and len(post.selftext) >= min_caracteres and (max_caracteres is None or len(post.selftext) <= max_caracteres):
-            if 'http' not in post.selftext:  # Filtrar historias que no tengan links
-                historia = {
-                    'title': post.title,
-                    'content': post.selftext,
-                    'score': post.score
-                }
-                historias.append(historia)
-                ids_recolectados.add(post.id)
-                if len(historias) >= limite:
-                    break
-    
-    # Ordenar las historias por el número de votos (score) en orden descendente
-    historias.sort(key=lambda x: x['score'], reverse=True)
-    
-    # Devolver solo el número de historias solicitado
-    return historias[:limite]
 
-def guardar_historias(historias, subreddit):
-    """Guarda las historias en un archivo de texto."""
+    for post in posts:
+        if post.id in seen:
+            continue
+        if not (min_chars <= len(post.selftext) <= max_chars):
+            continue
+        if "http" in post.selftext:
+            continue
+
+        seen.add(post.id)
+        historias.append({
+            "id":      post.id,
+            "title":   post.title,
+            "content": post.selftext,
+            "score":   post.score,
+        })
+
+        if len(historias) >= limite:
+            break
+
+    historias.sort(key=lambda x: x["score"], reverse=True)
+    return historias
+
+
+def guardar_historias(historias: list[dict], subreddit: str) -> Path:
+    """Guarda las historias en historias/<subreddit>.txt y devuelve la ruta."""
     if not historias:
-        print("No se encontraron historias que cumplan con la longitud.")
-        return
+        print("⚠️  No se encontraron historias que cumplan los filtros.")
+        return None
 
-    carpeta_salida = "/home/isael/proyecto_vid/historias"
-    os.makedirs(carpeta_salida, exist_ok=True)
-    archivo_salida = os.path.join(carpeta_salida, f"{subreddit}.txt")
-    
-    with open(archivo_salida, "w", encoding="utf-8") as f:
-        for i, historia in enumerate(historias, 1):
-            f.write(f"{historia['title']}:\n{historia['content']}\n{'-'*40}\n")
-    
-    print(f"Historias guardadas en {archivo_salida}")
+    archivo = HISTORIAS_DIR / f"{subreddit}.txt"
+    with open(archivo, "w", encoding="utf-8") as f:
+        for i, h in enumerate(historias, 1):
+            f.write(f"{h['title']}\n{h['content']}\n{'—'*40}\n\n")
+
+    print(f"✅ {len(historias)} historias guardadas en {archivo}")
+    return archivo
+
+
+def mostrar_historias(historias: list[dict]):
+    for i, h in enumerate(historias, 1):
+        preview = h["content"][:120].replace("\n", " ")
+        print(f"\n[{i}] {h['title']} (score: {h['score']})\n    {preview}…")
