@@ -35,6 +35,8 @@ def create_video(
     start_second: int = 0,
     srt_path: Path | None = None,
     story_id: str | None = None,
+    *,
+    fast_mode: bool = False,  # set True for speed‑optimized encoding
 ) -> Path:
     """
     Crea el video base (sin subtítulos):
@@ -67,6 +69,14 @@ def create_video(
         # Crop y escala a 9:16
         video = _crop_to_vertical(video)
 
+        # Fast‑mode tweaks (applied before adding audio)
+        if fast_mode:
+            # Reduce resolution (e.g., 30% of original) to speed up processing
+            video = Resize(0.3).apply(video)
+            # Lower frame‑rate for testing; adjust as needed
+            video = video.with_fps(12)
+
+
         # Asignar audio
         video = video.with_audio(audio)
 
@@ -81,14 +91,15 @@ def create_video(
                 txt = TextClip(
                     text=text,
                     font=str(FONT_PATH),
-                    font_size=int(video.w * 0.066),
+                    font_size=int(video.w * 0.075),  # slightly larger
                     color="white",
                     stroke_color="black",
-                    stroke_width=3,
+                    stroke_width=2,  # thicker outline
                     method="caption",
-                    size=(SUBTITLE_W, 120),
+                    size=(SUBTITLE_W, 200),  # taller box for more lines
+                    text_align="center",
                 )
-                y_top = int(video.h * 0.65)
+                y_top = int(video.h * 0.60)  # raise baseline a bit
                 y_top = max(0, min(y_top, max(0, video.h - txt.h)))
                 txt = txt.with_position(("center", y_top)).with_start(start).with_duration(duration)
                 clips.append(txt)
@@ -99,10 +110,10 @@ def create_video(
                 codec="libx264",
                 audio_codec="aac",
                 fps=video.fps,
-                bitrate="500k",
-                ffmpeg_params=["-crf", "28"],
+                bitrate="8000k",
+                ffmpeg_params=["-crf", "20"] + (["-preset", "ultrafast"] if fast_mode else []),
             )
-            ui.success(f"Video con subtítulos: {output_path}")
+
             return output_path
 
         # No subtitles: simple write
@@ -110,8 +121,8 @@ def create_video(
             str(output_path),
             codec="libx264",
             audio_codec="aac",
-            bitrate="500k",
-            ffmpeg_params=["-crf", "28"],
+            bitrate="8000k",
+            ffmpeg_params=["-crf", "20"] + (["-preset", "ultrafast"] if fast_mode else []),
         )
         ui.success(f"Video base guardado: {output_path}")
         return output_path

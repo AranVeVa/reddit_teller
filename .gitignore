@@ -7,9 +7,10 @@ scripts/__pycache__/
 *.pyd
 background_videos/
 background_audio/
-historias/
+stories/
 fonts/
 .env
 .env.*
 .DS_Store
 *.log
+in-out/

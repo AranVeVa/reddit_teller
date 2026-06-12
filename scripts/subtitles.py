@@ -38,8 +38,15 @@ def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3) 
     cards = []
     for i in range(0, len(all_words), words_per_card):
         chunk = all_words[i : i + words_per_card]
+        chunk_words = [w["word"] for w in chunk]
+        
+        # Group into lines of at most 3 words
+        lines = []
+        for j in range(0, len(chunk_words), 3):
+            lines.append(" ".join(chunk_words[j : j + 3]))
+        
         cards.append({
-            "text":  " ".join(w["word"] for w in chunk),
+            "text":  "\n".join(lines),
             "start": chunk[0]["start"],
             "end":   chunk[-1]["end"],
         })
@@ -80,7 +87,7 @@ def _parse_srt(srt_path: Path) -> list[tuple[float, float, str]]:
         s, ms = rest.split(",")
         return int(h)*3600 + int(m)*60 + int(s) + int(ms)/1000
 
-    return [(to_sec(s), to_sec(e), t.replace("\n", " ")) for s, e, t in entries]
+    return [(to_sec(s), to_sec(e), t.strip()) for s, e, t in entries]
 
 
 def burn_subtitles(
@@ -105,12 +112,13 @@ def burn_subtitles(
         txt = TextClip(
             text=text,
             font=str(FONT_PATH),
-            font_size=71,
+            font_size=int(video.w * 0.075),
             color="white",
             stroke_color="black",
-            stroke_width=3,
+            stroke_width=2,
             method="caption",
-            size=(SUBTITLE_W, 120),
+            size=(SUBTITLE_W, 200),
+            text_align="center",
         )
         y_top = int(video.h * position_y)
         y_top = max(0, min(y_top, max(0, video.h - txt.h)))
