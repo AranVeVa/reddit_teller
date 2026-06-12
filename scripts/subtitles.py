@@ -19,7 +19,7 @@ def _fmt_ts(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3) -> list[dict]:
+def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3, is_vertical: bool = True) -> list[dict]:
     all_words = []
 
     for seg in whisper_segments:
@@ -40,13 +40,17 @@ def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3) 
         chunk = all_words[i : i + words_per_card]
         chunk_words = [w["word"] for w in chunk]
         
-        # Group into lines of at most 3 words
-        lines = []
-        for j in range(0, len(chunk_words), 3):
-            lines.append(" ".join(chunk_words[j : j + 3]))
+        if is_vertical:
+            # Group into lines of at most 3 words
+            lines = []
+            for j in range(0, len(chunk_words), 3):
+                lines.append(" ".join(chunk_words[j : j + 3]))
+            card_text = "\n".join(lines)
+        else:
+            card_text = " ".join(chunk_words)
         
         cards.append({
-            "text":  "\n".join(lines),
+            "text":  card_text,
             "start": chunk[0]["start"],
             "end":   chunk[-1]["end"],
         })
@@ -54,7 +58,7 @@ def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3) 
     return cards
 
 
-def generate_srt(audio_path: Path, words_per_card: int = 3) -> Path:
+def generate_srt(audio_path: Path, words_per_card: int = 3, is_vertical: bool = True) -> Path:
     audio_path = Path(audio_path)
     ui.info(f"Transcribiendo {audio_path.name}...")
 
@@ -62,7 +66,7 @@ def generate_srt(audio_path: Path, words_per_card: int = 3) -> Path:
     result   = model.transcribe(str(audio_path), word_timestamps=True)
     segments = result["segments"]
 
-    cards      = _word_level_segments(segments, words_per_card)
+    cards      = _word_level_segments(segments, words_per_card, is_vertical=is_vertical)
     srt_path   = SUBS_DIR / f"{audio_path.stem}.srt"
 
     with open(srt_path, "w", encoding="utf-8") as f:
@@ -105,6 +109,18 @@ def burn_subtitles(
     clips     = [video]
 
     SUBTITLE_W = int(video.w * 0.9)
+    is_vertical = video.w < video.h
+
+    if is_vertical:
+        font_size = int(video.w * 0.075)
+        stroke_width = 5
+        box_height = 200
+        y_pos_pct = position_y
+    else:
+        font_size = int(video.h * 0.055)
+        stroke_width = 3
+        box_height = 180
+        y_pos_pct = 0.75
 
     for start, end, text in subtitles:
         duration = end - start
@@ -112,15 +128,15 @@ def burn_subtitles(
         txt = TextClip(
             text=text,
             font=str(FONT_PATH),
-            font_size=int(video.w * 0.075),
+            font_size=font_size,
             color="white",
             stroke_color="black",
-            stroke_width=2,
+            stroke_width=stroke_width,
             method="caption",
-            size=(SUBTITLE_W, 200),
+            size=(SUBTITLE_W, box_height),
             text_align="center",
         )
-        y_top = int(video.h * position_y)
+        y_top = int(video.h * y_pos_pct)
         y_top = max(0, min(y_top, max(0, video.h - txt.h)))
         txt = txt.with_position(("center", y_top)).with_start(start).with_duration(duration)
         clips.append(txt)

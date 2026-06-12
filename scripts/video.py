@@ -86,20 +86,33 @@ def create_video(
         if srt_path:
             subtitles = _parse_srt(srt_path)
             SUBTITLE_W = int(video.w * 0.9)
+            is_vertical = video.w < video.h
+
+            if is_vertical:
+                font_size = int(video.w * 0.075)
+                stroke_width = 5
+                box_height = 200
+                y_pos_pct = 0.60
+            else:
+                font_size = int(video.h * 0.055)
+                stroke_width = 3
+                box_height = 180
+                y_pos_pct = 0.75
+
             for start, end, text in subtitles:
                 duration = end - start
                 txt = TextClip(
                     text=text,
                     font=str(FONT_PATH),
-                    font_size=int(video.w * 0.075),  # slightly larger
+                    font_size=font_size,
                     color="white",
                     stroke_color="black",
-                    stroke_width=2,  # thicker outline
+                    stroke_width=stroke_width,
                     method="caption",
-                    size=(SUBTITLE_W, 200),  # taller box for more lines
+                    size=(SUBTITLE_W, box_height),
                     text_align="center",
                 )
-                y_top = int(video.h * 0.60)  # raise baseline a bit
+                y_top = int(video.h * y_pos_pct)
                 y_top = max(0, min(y_top, max(0, video.h - txt.h)))
                 txt = txt.with_position(("center", y_top)).with_start(start).with_duration(duration)
                 clips.append(txt)

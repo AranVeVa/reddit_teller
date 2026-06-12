@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import BACKGROUND_AUDIO, BACKGROUND_VIDEO, AUDIOS_DIR, MIXED_DIR, SUBS_DIR
+from config import BACKGROUND_AUDIO, BACKGROUND_VIDEO, AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEO_WIDTH, VIDEO_HEIGHT
 from scripts.reddit      import obtener_historias, guardar_historias, mostrar_historias
 from scripts.voice       import archivo_a_audio
 from scripts.audio_mixer import mix_audio
@@ -146,7 +146,8 @@ def main():
     srt_path = None
     if add_subs:
         words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
-        srt_path = generate_srt(audio_path, words_per_card=words_per_card)
+        is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
+        srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical)
         # Organize subtitles into subreddit subfolder with story ID
         subs_sub_dir = SUBS_DIR / subreddit
         subs_sub_dir.mkdir(parents=True, exist_ok=True)
