@@ -113,12 +113,12 @@ def burn_subtitles(
 
     if is_vertical:
         font_size = int(video.w * 0.075)
-        stroke_width = 5
+        stroke_width = 2
         box_height = 200
         y_pos_pct = position_y
     else:
         font_size = int(video.h * 0.055)
-        stroke_width = 3
+        stroke_width = 2
         box_height = 180
         y_pos_pct = 0.75
 

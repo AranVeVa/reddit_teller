@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import BACKGROUND_AUDIO, BACKGROUND_VIDEO, AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEO_WIDTH, VIDEO_HEIGHT
+from config import BACKGROUND_AUDIO, BACKGROUND_VIDEO, AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEO_WIDTH, VIDEO_HEIGHT, STORIES_DIR
 from scripts.reddit      import obtener_historias, guardar_historias, mostrar_historias
 from scripts.voice       import archivo_a_audio
 from scripts.audio_mixer import mix_audio
@@ -108,10 +108,66 @@ def main():
         ui.info("Proceso terminado.")
         return
 
-    audio_path = archivo_a_audio(archivo_txt)
-    if not audio_path:
-        ui.error("Error generando audio. Saliendo.")
+    from moviepy import AudioFileClip
+    from moviepy.audio.AudioClip import concatenate_audioclips
+
+    story_audios = []
+    story_offsets = []
+    current_offset = 0.0
+
+    subreddit_story_dir = STORIES_DIR / subreddit
+    subreddit_story_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx, h in enumerate(historias, 1):
+        ui.info(f"Generando audio para la historia {idx}/{len(historias)}: {h['title']}...")
+        temp_story_txt = subreddit_story_dir / f"temp_{h['id']}.txt"
+        temp_story_txt.write_text(f"{h['title']}\n{h['content']}\n", encoding="utf-8")
+        
+        story_audio_path = archivo_a_audio(temp_story_txt)
+        temp_story_txt.unlink(missing_ok=True)
+        
+        if not story_audio_path:
+            ui.error(f"Fallo al generar audio para la historia {idx}. Saliendo.")
+            for p in story_audios:
+                if p.exists():
+                    p.unlink()
+            return
+            
+        story_audios.append(story_audio_path)
+        
+        clip = AudioFileClip(str(story_audio_path))
+        duration = clip.duration
+        clip.close()
+        
+        story_offsets.append(current_offset)
+        current_offset += duration
+
+    ui.info("Combinando audios de las historias...")
+    try:
+        clips = [AudioFileClip(str(p)) for p in story_audios]
+        final_audio = concatenate_audioclips(clips)
+        
+        combined_audio_name = f"{subreddit}_{historias[0]['id']}.mp3"
+        temp_combined_path = AUDIOS_DIR / combined_audio_name
+        final_audio.write_audiofile(str(temp_combined_path), bitrate="320k", logger=None)
+        
+        for c in clips:
+            c.close()
+        final_audio.close()
+        
+        for p in story_audios:
+            if p.exists():
+                p.unlink()
+                
+        audio_path = temp_combined_path
+        
+    except Exception as e:
+        ui.error(f"Error combinando audios: {e}")
+        for p in story_audios:
+            if p.exists():
+                p.unlink()
         return
+
     # Organize audio into subreddit subfolder with story ID
     audio_sub_dir = AUDIOS_DIR / subreddit
     audio_sub_dir.mkdir(parents=True, exist_ok=True)
@@ -155,7 +211,20 @@ def main():
         srt_path.rename(srt_new_path)
         srt_path = srt_new_path
 
-    video_path = create_video(mixed_path, BACKGROUND_VIDEO, subreddit, start_second=start_sec, srt_path=srt_path, story_id=historias[0]["id"])
+    # Preguntar sobre modo oscuro para la tarjeta de Reddit
+    dark_mode = ask("¿Usar la tarjeta de Reddit en modo oscuro (dark mode)?")
+
+    video_path = create_video(
+        mixed_path, 
+        BACKGROUND_VIDEO, 
+        subreddit, 
+        start_second=start_sec, 
+        srt_path=srt_path, 
+        story_id=historias[0]["id"],
+        historias=historias,
+        story_offsets=story_offsets,
+        dark_mode=dark_mode
+    )
     if not video_path:
         ui.error("Error creando video. Saliendo.")
         return

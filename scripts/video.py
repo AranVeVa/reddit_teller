@@ -1,5 +1,5 @@
-from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip
-from moviepy.video.fx import Crop, Resize
+from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, ImageClip
+from moviepy.video.fx import Crop, Resize, FadeIn, FadeOut
 from pathlib import Path
 import sys
 
@@ -36,7 +36,10 @@ def create_video(
     srt_path: Path | None = None,
     story_id: str | None = None,
     *,
-    fast_mode: bool = False,  # set True for speed‑optimized encoding
+    fast_mode: bool = True,  # set True for speed‑optimized encoding
+    historias: list[dict] | None = None,
+    story_offsets: list[float] | None = None,
+    dark_mode: bool = False,  # set True to use dark template
 ) -> Path:
     """
     Crea el video base (sin subtítulos):
@@ -59,6 +62,7 @@ def create_video(
     else:
         output_path = sub_dir / f"{base_name}.mp4"
 
+    temp_cards = []
     try:
         audio = AudioFileClip(str(audio_path))
         video = VideoFileClip(str(background_video))
@@ -82,6 +86,38 @@ def create_video(
 
         clips = [video]
 
+        # Generate and overlay Reddit title cards for each story
+        if historias and story_offsets:
+            from scripts.reddit_card import generate_reddit_card
+            is_vertical = video.w < video.h
+            # Reduced vertical gap by moving the card slightly lower (closer to subtitles at y=0.60/0.75)
+            y_pos = int(video.h * 0.34)
+            
+            for idx, h in enumerate(historias):
+                t_start = story_offsets[idx]
+                if t_start >= audio.duration:
+                    break
+                    
+                temp_card_path = output_path.parent / f"temp_card_{h['id']}.png"
+                generate_reddit_card(
+                    subreddit=output_name,
+                    title=h["title"],
+                    score=h["score"],
+                    video_w=video.w,
+                    video_h=video.h,
+                    output_path=temp_card_path,
+                    dark_mode=dark_mode
+                )
+                temp_cards.append(temp_card_path)
+                
+                card_dur = min(7.0, audio.duration - t_start)
+                if card_dur > 1.0:
+                    card_clip = ImageClip(str(temp_card_path)).with_duration(card_dur)
+                    card_clip = FadeIn(0.5).apply(card_clip)
+                    card_clip = FadeOut(0.5).apply(card_clip)
+                    card_clip = card_clip.with_position(("center", y_pos)).with_start(t_start)
+                    clips.append(card_clip)
+
         # If subtitles provided, parse and append text clips
         if srt_path:
             subtitles = _parse_srt(srt_path)
@@ -90,14 +126,14 @@ def create_video(
 
             if is_vertical:
                 font_size = int(video.w * 0.075)
-                stroke_width = 5
+                stroke_width = 2
                 box_height = 200
-                y_pos_pct = 0.60
+                y_pos_pct = 0.45
             else:
                 font_size = int(video.h * 0.055)
-                stroke_width = 3
+                stroke_width = 2
                 box_height = 180
-                y_pos_pct = 0.75
+                y_pos_pct = 0.58
 
             for start, end, text in subtitles:
                 duration = end - start
@@ -144,5 +180,11 @@ def create_video(
         ui.error(f"Archivo no encontrado: {e}")
     except Exception as e:
         ui.error(f"Error creando video: {e}")
+    finally:
+        for tc in temp_cards:
+            try:
+                tc.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     return None
