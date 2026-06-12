@@ -71,9 +71,6 @@ def elegir_duracion() -> tuple[int, int]:
 def main():
     ui.header("reddit_teller 2.0")
 
-    # Status steps: fetch, audio, mix, video, subtitles
-    status = ui.Status(5)
-
     url = input(f"\n{ui.prompt_str('URL o nombre del subreddit: ')}").strip()
     subreddit = url.split("/r/")[-1].strip("/").split("/")[0] if "/r/" in url else url
 
@@ -115,7 +112,6 @@ def main():
     if not audio_path:
         ui.error("Error generando audio. Saliendo.")
         return
-    status.update(message="Audio generado")
 
     if not ask("¿Continuar con la mezcla de audio?"):
         ui.info("Proceso terminado.")
@@ -125,32 +121,30 @@ def main():
     if not mixed_path:
         ui.error("Error mezclando audio. Saliendo.")
         return
-    status.update(message="Audio mezclado")
 
     if not ask("¿Continuar con la creación del video?"):
         ui.info("Proceso terminado.")
         return
 
-    start_sec  = ask_int("¿Desde qué segundo del video de fondo empezar?", 0)
-    video_path = create_video(mixed_path, BACKGROUND_VIDEO, subreddit, start_second=start_sec)
+    start_sec = ask_int("¿Desde qué segundo del video de fondo empezar?", 0)
+
+    # Preguntar sobre subtítulos *antes* de renderizar para poder
+    # quemarlos en la misma pasada y evitar renderizar dos veces.
+    add_subs = ask("¿Agregar subtítulos al video?")
+    srt_path = None
+    if add_subs:
+        words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
+        srt_path = generate_srt(audio_path, words_per_card=words_per_card)
+
+    video_path = create_video(mixed_path, BACKGROUND_VIDEO, subreddit, start_second=start_sec, srt_path=srt_path)
     if not video_path:
         ui.error("Error creando video. Saliendo.")
         return
-    status.update(message="Video creado")
 
-    if not ask("¿Agregar subtítulos al video?"):
+    if srt_path:
+        ui.success(f"Video final: {video_path}")
+    else:
         ui.success(f"Listo. Video sin subtítulos: {video_path}")
-        return
-
-    words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
-    srt_path       = generate_srt(audio_path, words_per_card=words_per_card)
-
-    final_path = video_path.parent / f"{video_path.stem}_subtitled.mp4"
-    burn_subtitles(video_path, srt_path, final_path)
-
-    ui.success(f"Video final: {final_path}")
-    status.update(message="Subtítulos añadidos")
-
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,4 @@
 import sys
-import time
 import shutil
 
 RESET = "\033[0m"
@@ -31,42 +30,21 @@ def warn(msg: str) -> None:
 
 
 def header(title: str) -> None:
-    width = shutil.get_terminal_size((80, 20)).columns
-    sep = "=" * width
-    print(sep)
-    print(f"{BOLD}{title.center(width)}{RESET}")
-    print(sep)
+    # Limit width to terminal size but cap at 80 columns to avoid overflow
+    term_width = shutil.get_terminal_size((80, 20)).columns
+    width = min(term_width, 80)
+    # Truncate title if too long for the box
+    max_title_len = width - 2  # account for side borders
+    if len(title) > max_title_len:
+        title = title[:max_title_len]
+    sep = "═" * (width - 2)  # side borders consume 2 chars
+    box_top = f"╔{sep}╗"
+    box_mid = f"║{title.center(width - 2)}║"
+    box_bot = f"╚{sep}╝"
+    print(_color(box_top, CYAN))
+    print(f"{BOLD}{_color(box_mid, CYAN)}{RESET}")
+    print(_color(box_bot, CYAN))
 
 
 def prompt_str(prompt: str) -> str:
     return f"{BOLD}{CYAN}{prompt}{RESET}"
-
-
-def progress_bar(completed: int, total: int, width: int = 30) -> str:
-    if total <= 0:
-        return ""
-    ratio = min(max(completed / total, 0.0), 1.0)
-    fill = int(ratio * width)
-    bar = "█" * fill + "-" * (width - fill)
-    percent = int(ratio * 100)
-    return f"[{bar}] {percent}%"
-
-
-class Status:
-    def __init__(self, total_steps: int):
-        self.total = max(1, int(total_steps))
-        self.done = 0
-        self.start = time.time()
-
-    def update(self, step: int = 1, message: str | None = None) -> None:
-        self.done = min(self.done + int(step), self.total)
-        elapsed = time.time() - self.start
-        rate = (self.done / max(1, elapsed)) if elapsed > 0 else 0
-        remaining_steps = max(0, self.total - self.done)
-        eta = int(remaining_steps / rate) if rate > 0 else 0
-        bar = progress_bar(self.done, self.total)
-        msg = f"{bar} {self.done}/{self.total}"
-        if message:
-            msg += f" — {message}"
-        msg += f" (ETA: {eta}s)"
-        print(msg)
