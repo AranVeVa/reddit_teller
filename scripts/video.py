@@ -88,12 +88,25 @@ def create_video(
                 clips.append(txt)
 
             final = CompositeVideoClip(clips)
-            final.write_videofile(str(output_path), codec="libx264", audio_codec="aac", fps=video.fps)
+            final.write_videofile(
+                str(output_path),
+                codec="libx264",
+                audio_codec="aac",
+                fps=video.fps,
+                bitrate="500k",
+                ffmpeg_params=["-crf", "28"],
+            )
             ui.success(f"Video con subtítulos: {output_path}")
             return output_path
 
         # No subtitles: simple write
-        video.write_videofile(str(output_path), codec="libx264", audio_codec="aac")
+        video.write_videofile(
+            str(output_path),
+            codec="libx264",
+            audio_codec="aac",
+            bitrate="500k",
+            ffmpeg_params=["-crf", "28"],
+        )
         ui.success(f"Video base guardado: {output_path}")
         return output_path
 

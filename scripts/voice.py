@@ -22,10 +22,13 @@ def text_to_audio(texto: str, nombre: str) -> Path | None:
     Rota las API keys automáticamente si hay varias.
     Devuelve la ruta del archivo generado, o None si falla.
     """
+    # Clean input text: strip whitespace and remove unexpected control characters
+    cleaned_text = texto.strip().replace("\r", "").replace("\n", " ")
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
     payload = {
-        "text": texto,
-        "model_id": "eleven_flash_v2_5",
+        "text": cleaned_text,
+        # Updated to a free‑tier compatible model
+        "model_id": "eleven_turbo_v2",
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.8,
@@ -67,12 +70,14 @@ def text_to_audio(texto: str, nombre: str) -> Path | None:
 
 
 def archivo_a_audio(txt_path: Path) -> Path | None:
-    """Wrapper: lee un .txt y lo convierte a audio."""
+    """Wrapper: lee un .txt y lo convierte a audio, limpiando el texto antes de enviarlo a ElevenLabs."""
     txt_path = Path(txt_path)
     if not txt_path.exists():
         ui.error(f"Archivo no encontrado: {txt_path}")
         return None
 
-    texto = txt_path.read_text(encoding="utf-8")
+    raw_text = txt_path.read_text(encoding="utf-8")
+    # Remove leading/trailing whitespace and collapse line breaks to spaces
+    cleaned = raw_text.strip().replace("\r", "").replace("\n", " ")
     nombre = txt_path.stem
-    return text_to_audio(texto, nombre)
+    return text_to_audio(cleaned, nombre)
