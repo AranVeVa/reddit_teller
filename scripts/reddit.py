@@ -8,11 +8,11 @@ from config import (
     REDDIT_CLIENT_ID,
     REDDIT_CLIENT_SECRET,
     REDDIT_USER_AGENT,
-    HISTORIAS_DIR,
+    STORIES_DIR,
 )
 from scripts import termui as ui
 
-USED_IDS_FILE = HISTORIAS_DIR / "used_ids.txt"
+USED_IDS_FILE = STORIES_DIR / "used_ids.txt"
 
 def _load_used_ids() -> set:
     if not USED_IDS_FILE.exists():
@@ -103,8 +103,13 @@ def guardar_historias(historias: list[dict], subreddit: str) -> Path:
         ui.warn("No se encontraron historias que cumplan los filtros.")
         return None
 
-    archivo = HISTORIAS_DIR / f"{subreddit}.txt"
-
+    # Create subdirectory for _dir in [AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEOS_DIR, STORIES_DIR]:
+    sub_dir = STORIES_DIR / subreddit
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    # Use the ID of the first story (or a placeholder) in the filename for identification
+    first_id = historias[0]["id"] if historias else "unknown"
+    archivo = sub_dir / f"{subreddit}_{first_id}.txt"
+    
     with open(archivo, "w", encoding="utf-8") as f:
         for h in historias:
             f.write(
@@ -113,7 +118,7 @@ def guardar_historias(historias: list[dict], subreddit: str) -> Path:
                 f"{'—' * 40}\n\n"
             )
             _save_used_id(h["id"])
-
+    
     ui.success(f"{len(historias)} historias guardadas en {archivo}")
     return archivo
 

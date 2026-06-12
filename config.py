@@ -28,9 +28,9 @@ AUDIOS_DIR      = OUTPUTS_DIR / "audios"
 MIXED_DIR       = OUTPUTS_DIR / "mixed"
 SUBS_DIR        = OUTPUTS_DIR / "subs"
 VIDEOS_DIR      = OUTPUTS_DIR / "videos"
-HISTORIAS_DIR   = ROOT / "historias"
+STORIES_DIR   = ROOT / "stories"
 
-for _dir in [AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEOS_DIR, HISTORIAS_DIR]:
+for _dir in [AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEOS_DIR, STORIES_DIR]:
     _dir.mkdir(parents=True, exist_ok=True)
 
 # --- Video ---

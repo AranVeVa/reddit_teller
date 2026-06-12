@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import BACKGROUND_AUDIO, BACKGROUND_VIDEO
+from config import BACKGROUND_AUDIO, BACKGROUND_VIDEO, AUDIOS_DIR, MIXED_DIR, SUBS_DIR
 from scripts.reddit      import obtener_historias, guardar_historias, mostrar_historias
 from scripts.voice       import archivo_a_audio
 from scripts.audio_mixer import mix_audio
@@ -112,6 +112,12 @@ def main():
     if not audio_path:
         ui.error("Error generando audio. Saliendo.")
         return
+    # Organize audio into subreddit subfolder with story ID
+    audio_sub_dir = AUDIOS_DIR / subreddit
+    audio_sub_dir.mkdir(parents=True, exist_ok=True)
+    audio_new_path = audio_sub_dir / audio_path.name
+    audio_path.rename(audio_new_path)
+    audio_path = audio_new_path
 
     if not ask("¿Continuar con la mezcla de audio?"):
         ui.info("Proceso terminado.")
@@ -121,6 +127,12 @@ def main():
     if not mixed_path:
         ui.error("Error mezclando audio. Saliendo.")
         return
+    # Organize mixed audio into subreddit subfolder with story ID
+    mixed_sub_dir = MIXED_DIR / subreddit
+    mixed_sub_dir.mkdir(parents=True, exist_ok=True)
+    mixed_new_path = mixed_sub_dir / mixed_path.name
+    mixed_path.rename(mixed_new_path)
+    mixed_path = mixed_new_path
 
     if not ask("¿Continuar con la creación del video?"):
         ui.info("Proceso terminado.")
@@ -135,8 +147,14 @@ def main():
     if add_subs:
         words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
         srt_path = generate_srt(audio_path, words_per_card=words_per_card)
+        # Organize subtitles into subreddit subfolder with story ID
+        subs_sub_dir = SUBS_DIR / subreddit
+        subs_sub_dir.mkdir(parents=True, exist_ok=True)
+        srt_new_path = subs_sub_dir / srt_path.name
+        srt_path.rename(srt_new_path)
+        srt_path = srt_new_path
 
-    video_path = create_video(mixed_path, BACKGROUND_VIDEO, subreddit, start_second=start_sec, srt_path=srt_path)
+    video_path = create_video(mixed_path, BACKGROUND_VIDEO, subreddit, start_second=start_sec, srt_path=srt_path, story_id=historias[0]["id"])
     if not video_path:
         ui.error("Error creando video. Saliendo.")
         return

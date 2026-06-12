@@ -34,6 +34,7 @@ def create_video(
     output_name: str,
     start_second: int = 0,
     srt_path: Path | None = None,
+    story_id: str | None = None,
 ) -> Path:
     """
     Crea el video base (sin subtítulos):
@@ -46,10 +47,15 @@ def create_video(
     background_video = Path(background_video)
     # If subtitles requested, generate a subtitled filename so the
     # render is produced in a single pass.
+    sub_dir = VIDEOS_DIR / output_name
+    sub_dir.mkdir(parents=True, exist_ok=True)
+    base_name = output_name
+    if story_id:
+        base_name = f"{output_name}_{story_id}"
     if srt_path:
-        output_path = VIDEOS_DIR / f"{output_name}_subtitled.mp4"
+        output_path = sub_dir / f"{base_name}_subtitled.mp4"
     else:
-        output_path = VIDEOS_DIR / f"{output_name}.mp4"
+        output_path = sub_dir / f"{base_name}.mp4"
 
     try:
         audio = AudioFileClip(str(audio_path))
