@@ -1,12 +1,103 @@
 from PIL import Image, ImageDraw, ImageFont
 import os
 from pathlib import Path
+import unicodedata
 
 # Path config
 FONT_SANS = "/usr/share/fonts/TTF/DejaVuSans.ttf"
 FONT_SANS_BOLD = "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"
+FONT_EMOJI = "/usr/share/fonts/noto/NotoColorEmoji.ttf"
 TEMPLATE_LIGHT = "/home/isael/Descargas/reddit-story.png"
 TEMPLATE_DARK = "/home/isael/Descargas/reddit-story-dark.png"
+
+def is_emoji(char):
+    cp = ord(char)
+    if (0x1F300 <= cp <= 0x1F9FF or 
+        0x1FA70 <= cp <= 0x1FAFF or 
+        0x2600 <= cp <= 0x27BF or
+        0x1F000 <= cp <= 0x1F2FF or
+        cp == 0x200d):
+        return True
+    cat = unicodedata.category(char)
+    if cat == "So":
+        return True
+    return False
+
+def split_text_and_emojis(text):
+    runs = []
+    current_run = ""
+    current_is_emoji = None
+    for char in text:
+        char_is_emoji = is_emoji(char)
+        if current_is_emoji is None:
+            current_is_emoji = char_is_emoji
+            current_run = char
+        elif current_is_emoji == char_is_emoji:
+            current_run += char
+        else:
+            runs.append((current_run, current_is_emoji))
+            current_run = char
+            current_is_emoji = char_is_emoji
+    if current_run:
+        runs.append((current_run, current_is_emoji))
+    return runs
+
+def get_text_width(text, font, font_size):
+    runs = split_text_and_emojis(text)
+    w = 0
+    for run_text, is_emo in runs:
+        if is_emo:
+            for char in run_text:
+                if char != "\u200d":
+                    w += int(font_size * 1.1)
+        else:
+            try:
+                bbox = font.getbbox(run_text)
+                w += bbox[2] - bbox[0]
+            except AttributeError:
+                w += font.getsize(run_text)[0]
+    return w
+
+def draw_text_with_emojis(draw, img, xy, text, font, font_size, emoji_font_path, text_color):
+    runs = split_text_and_emojis(text)
+    x, y = xy
+    font_emoji = None
+    if os.path.exists(emoji_font_path):
+        try:
+            font_emoji = ImageFont.truetype(emoji_font_path, 109)
+        except Exception:
+            pass
+    for run_text, is_emo in runs:
+        if is_emo and font_emoji:
+            for char in run_text:
+                if char == "\u200d":
+                    continue
+                try:
+                    emoji_img = Image.new("RGBA", (130, 130), (0, 0, 0, 0))
+                    emoji_draw = ImageDraw.Draw(emoji_img)
+                    emoji_draw.text((10, 10), char, font=font_emoji, fill=(255, 255, 255, 255), embedded_color=True)
+                    target_w = int(font_size * 1.1)
+                    target_h = int(font_size * 1.1)
+                    emoji_scaled = emoji_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+                    paste_y = y - int(font_size * 0.05)
+                    img.alpha_composite(emoji_scaled, (x, paste_y))
+                    x += int(font_size * 1.1)
+                except Exception:
+                    draw.text((x, y), char, font=font, fill=text_color)
+                    try:
+                        bbox = font.getbbox(char)
+                        w = bbox[2] - bbox[0]
+                    except AttributeError:
+                        w = font.getsize(char)[0]
+                    x += w
+        else:
+            draw.text((x, y), run_text, font=font, fill=text_color)
+            try:
+                bbox = font.getbbox(run_text)
+                w = bbox[2] - bbox[0]
+            except AttributeError:
+                w = font.getsize(run_text)[0]
+            x += w
 
 def _load_font(font_path: str, size: int):
     try:
@@ -16,17 +107,13 @@ def _load_font(font_path: str, size: int):
         pass
     return ImageFont.load_default()
 
-def wrap_text(text: str, font, max_width: int) -> list[str]:
+def wrap_text(text: str, font, font_size: int, max_width: int) -> list[str]:
     words = text.split()
     lines = []
     current_line = []
     for word in words:
         test_line = " ".join(current_line + [word])
-        try:
-            bbox = font.getbbox(test_line)
-            w = bbox[2] - bbox[0]
-        except AttributeError:
-            w, _ = font.getsize(test_line)
+        w = get_text_width(test_line, font, font_size)
         if w <= max_width:
             current_line.append(word)
         else:
@@ -41,25 +128,21 @@ def find_optimum_font_size(text: str, font_path: str, max_width: int, max_height
     size = start_size
     while size > 25:
         font = _load_font(font_path, size)
-        lines = wrap_text(text, font, max_width)
+        lines = wrap_text(text, font, size, max_width)
         
-        total_h = 0
+        try:
+            line_h = font.getbbox("Ag")[3] - font.getbbox("Ag")[1]
+        except AttributeError:
+            _, line_h = font.getsize("Ag")
+            
         line_spacing = int(size * 0.25)
-        for line in lines:
-            try:
-                bbox = font.getbbox(line)
-                h = bbox[3] - bbox[1]
-            except AttributeError:
-                _, h = font.getsize(line)
-            total_h += h + line_spacing
-        if total_h > 0:
-            total_h -= line_spacing
+        total_h = len(lines) * line_h + (len(lines) - 1) * line_spacing
             
         if total_h <= max_height:
             return size, lines
         size -= 5
     font = _load_font(font_path, size)
-    return size, wrap_text(text, font, max_width)
+    return size, wrap_text(text, font, size, max_width)
 
 def generate_reddit_card(
     subreddit: str,
@@ -115,26 +198,29 @@ def generate_reddit_card(
     font_title = _load_font(FONT_SANS_BOLD, font_size)
 
     # Vertically center the lines in the 170px slot (y=450 to y=620)
-    total_h = 0
+    try:
+        line_h = font_title.getbbox("Ag")[3] - font_title.getbbox("Ag")[1]
+    except AttributeError:
+        _, line_h = font_title.getsize("Ag")
+        
     line_spacing = int(font_size * 0.25)
-    line_heights = []
-    for line in lines:
-        try:
-            bbox = font_title.getbbox(line)
-            lh = bbox[3] - bbox[1]
-        except AttributeError:
-            _, lh = font_title.getsize(line)
-        line_heights.append(lh)
-        total_h += lh + line_spacing
-    if total_h > 0:
-        total_h -= line_spacing
+    total_h = len(lines) * line_h + (len(lines) - 1) * line_spacing
 
     start_y = 450 + (170 - total_h) // 2
 
     curr_y = start_y
-    for i, line in enumerate(lines):
-        draw.text((75, curr_y), line, font=font_title, fill=text_color)
-        curr_y += line_heights[i] + line_spacing
+    for line in lines:
+        draw_text_with_emojis(
+            draw, 
+            img, 
+            (75, curr_y), 
+            line, 
+            font_title, 
+            font_size, 
+            FONT_EMOJI, 
+            text_color
+        )
+        curr_y += line_h + line_spacing
 
     # 6. Draw Footer stats
     score_str = f"{score}"

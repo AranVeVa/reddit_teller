@@ -1,5 +1,6 @@
 from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, ImageClip
 from moviepy.video.fx import Crop, Resize, FadeIn, FadeOut
+import math
 from pathlib import Path
 import sys
 
@@ -36,7 +37,7 @@ def create_video(
     srt_path: Path | None = None,
     story_id: str | None = None,
     *,
-    fast_mode: bool = True,  # set True for speed‑optimized encoding
+    fast_mode: bool = False,  # set True for speed‑optimized encoding
     historias: list[dict] | None = None,
     story_offsets: list[float] | None = None,
     dark_mode: bool = False,  # set True to use dark template
@@ -86,12 +87,36 @@ def create_video(
 
         clips = [video]
 
+        is_vertical = video.w < video.h
+
+        # ── Visual Layout Config ───────────────────────────────────────────
+        if is_vertical:
+            card_w_est = int(video.w * 0.72)
+            TOP_MARGIN = int(video.h * 0.33)   # 33% from top for vertical
+            card_h_est = int(card_w_est / 1.775)
+            card_bottom = TOP_MARGIN + card_h_est
+            
+            font_size  = int(video.w * 0.075)
+            stroke_width = 2
+            box_height = 200
+            # Set sub_y below card_bottom with a small gap (15px) to avoid overlay in vertical
+            sub_y = card_bottom + 15
+        else:
+            card_w_est = int(video.w * 0.42)
+            TOP_MARGIN = int(video.h * 0.33)   # Lowered from 0.28 to 0.33 for horizontal
+            card_h_est = int(card_w_est / 1.775)
+            card_bottom = TOP_MARGIN + card_h_est
+            
+            font_size  = int(video.h * 0.055)
+            stroke_width = 2
+            box_height = 180
+            # Set sub_y below card_bottom with a larger gap (45px) in horizontal
+            sub_y = card_bottom + 45
+
         # Generate and overlay Reddit title cards for each story
         if historias and story_offsets:
             from scripts.reddit_card import generate_reddit_card
-            is_vertical = video.w < video.h
-            # Reduced vertical gap by moving the card slightly lower (closer to subtitles at y=0.60/0.75)
-            y_pos = int(video.h * 0.34)
+            y_pos = TOP_MARGIN
             
             for idx, h in enumerate(historias):
                 t_start = story_offsets[idx]
@@ -113,27 +138,46 @@ def create_video(
                 card_dur = min(7.0, audio.duration - t_start)
                 if card_dur > 1.0:
                     card_clip = ImageClip(str(temp_card_path)).with_duration(card_dur)
-                    card_clip = FadeIn(0.5).apply(card_clip)
-                    card_clip = FadeOut(0.5).apply(card_clip)
-                    card_clip = card_clip.with_position(("center", y_pos)).with_start(t_start)
+
+                    # ── Animated entry / exit ──────────────────────────────────
+                    SLIDE_IN  = 0.55   # seconds to slide in
+                    SLIDE_OUT = 0.45   # seconds to slide out
+                    card_h    = card_clip.h
+                    target_y  = y_pos
+                    # Slide offset: move 55% of card height upward from rest position.
+                    # Stays on-screen so MoviePy never composites a zero-height slice.
+                    slide_offset = int(card_h * 0.55)
+                    start_y = max(0, target_y - slide_offset)
+
+                    def _make_card_position(dur, ty, sy, sin, sout):
+                        """Factory that captures loop vars by value (avoids closure bugs)."""
+                        def _pos(t):
+                            if t < sin:
+                                p = 1 - (1 - t / sin) ** 3           # ease-out cubic
+                                y = sy + (ty - sy) * p
+                            elif t > dur - sout:
+                                p = ((t - (dur - sout)) / sout) ** 3  # ease-in cubic
+                                y = ty + (sy - ty) * p
+                            else:
+                                y = ty
+                            return ("center", int(y))
+                        return _pos
+
+                    card_position = _make_card_position(
+                        card_dur, target_y, start_y, SLIDE_IN, SLIDE_OUT
+                    )
+
+                    # Fade accompanies slide: appears from 0→1 opacity as it descends,
+                    # disappears 1→0 as it rises back up.
+                    card_clip = FadeIn(SLIDE_IN).apply(card_clip)
+                    card_clip = FadeOut(SLIDE_OUT).apply(card_clip)
+                    card_clip = card_clip.with_position(card_position).with_start(t_start)
                     clips.append(card_clip)
 
         # If subtitles provided, parse and append text clips
         if srt_path:
             subtitles = _parse_srt(srt_path)
             SUBTITLE_W = int(video.w * 0.9)
-            is_vertical = video.w < video.h
-
-            if is_vertical:
-                font_size = int(video.w * 0.075)
-                stroke_width = 2
-                box_height = 200
-                y_pos_pct = 0.45
-            else:
-                font_size = int(video.h * 0.055)
-                stroke_width = 2
-                box_height = 180
-                y_pos_pct = 0.58
 
             for start, end, text in subtitles:
                 duration = end - start
@@ -148,8 +192,7 @@ def create_video(
                     size=(SUBTITLE_W, box_height),
                     text_align="center",
                 )
-                y_top = int(video.h * y_pos_pct)
-                y_top = max(0, min(y_top, max(0, video.h - txt.h)))
+                y_top = max(0, min(sub_y, max(0, video.h - txt.h)))
                 txt = txt.with_position(("center", y_top)).with_start(start).with_duration(duration)
                 clips.append(txt)
 
