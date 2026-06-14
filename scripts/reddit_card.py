@@ -241,8 +241,8 @@ def generate_reddit_card(
         # 72% of screen width (slightly larger)
         card_w = int(video_w * 0.72)
     else:
-        # 42% of screen width (slightly larger)
-        card_w = int(video_w * 0.42)
+        # 34% of screen width (20% smaller than 42%)
+        card_w = int(video_w * 0.34)
         
     card_h = int(card_w / 1.775)
     resized_img = img.resize((card_w, card_h), Image.Resampling.LANCZOS)

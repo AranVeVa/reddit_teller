@@ -68,6 +68,21 @@ def elegir_duracion() -> tuple[int, int]:
     return min_chars, max_chars
 
 
+def get_silent_audio_path(duration: float) -> Path:
+    path = AUDIOS_DIR / f"silence_{duration}.mp3"
+    if not path.exists():
+        import subprocess
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", "anullsrc=r=44100:cl=stereo",
+            "-t", str(duration),
+            str(path)
+        ]
+        subprocess.run(cmd, capture_output=True)
+    return path
+
+
 def main():
     ui.header("reddit_teller 2.0")
 
@@ -112,8 +127,7 @@ def main():
     from moviepy.audio.AudioClip import concatenate_audioclips
 
     story_audios = []
-    story_offsets = []
-    current_offset = 0.0
+    story_durations = []
 
     subreddit_story_dir = STORIES_DIR / subreddit
     subreddit_story_dir.mkdir(parents=True, exist_ok=True)
@@ -138,13 +152,39 @@ def main():
         clip = AudioFileClip(str(story_audio_path))
         duration = clip.duration
         clip.close()
-        
-        story_offsets.append(current_offset)
-        current_offset += duration
+        story_durations.append(duration)
 
     ui.info("Combinando audios de las historias...")
     try:
-        clips = [AudioFileClip(str(p)) for p in story_audios]
+        PAUSE_DURATION = 2.2
+        CARD_PRE_DELAY = 1.2  # Card appears 1.2 seconds before the narration starts
+        
+        clips = []
+        story_offsets = []
+        current_time = 0.0
+        
+        silent_path = get_silent_audio_path(PAUSE_DURATION)
+        
+        for idx, (path, duration) in enumerate(zip(story_audios, story_durations)):
+            story_clip = AudioFileClip(str(path))
+            
+            if idx == 0:
+                story_offsets.append(0.0)
+                clips.append(story_clip)
+                current_time += duration
+            else:
+                silent_clip = AudioFileClip(str(silent_path))
+                clips.append(silent_clip)
+                
+                # Next card starts sliding in 1.0s after silence begins (1.2s before narration)
+                card_start = current_time + (PAUSE_DURATION - CARD_PRE_DELAY)
+                story_offsets.append(card_start)
+                
+                current_time += PAUSE_DURATION
+                
+                clips.append(story_clip)
+                current_time += duration
+
         final_audio = concatenate_audioclips(clips)
         
         combined_audio_name = f"{subreddit}_{historias[0]['id']}.mp3"

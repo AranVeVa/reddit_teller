@@ -102,7 +102,7 @@ def create_video(
             # Set sub_y below card_bottom with a small gap (15px) to avoid overlay in vertical
             sub_y = card_bottom + 15
         else:
-            card_w_est = int(video.w * 0.42)
+            card_w_est = int(video.w * 0.34)
             TOP_MARGIN = int(video.h * 0.33)   # Lowered from 0.28 to 0.33 for horizontal
             card_h_est = int(card_w_est / 1.775)
             card_bottom = TOP_MARGIN + card_h_est
