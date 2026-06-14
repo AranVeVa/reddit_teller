@@ -18,6 +18,9 @@ _raw_keys = os.getenv("ELEVENLABS_API_KEYS", "")
 ELEVENLABS_API_KEYS = [k.strip() for k in _raw_keys.split(",") if k.strip()]
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
+# --- OpenAI ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
 # --- Archivos de entrada ---
 BACKGROUND_AUDIO = ROOT / os.getenv("BACKGROUND_AUDIO", "background_audio/Initiation.mp3")
 BACKGROUND_VIDEO = ROOT / os.getenv("BACKGROUND_VIDEO", "background_videos/gameplay.mp4")
@@ -28,9 +31,10 @@ AUDIOS_DIR      = OUTPUTS_DIR / "audios"
 MIXED_DIR       = OUTPUTS_DIR / "mixed"
 SUBS_DIR        = OUTPUTS_DIR / "subs"
 VIDEOS_DIR      = OUTPUTS_DIR / "videos"
+SCENES_DIR      = OUTPUTS_DIR / "scenes"
 STORIES_DIR   = ROOT / "stories"
 
-for _dir in [AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEOS_DIR, STORIES_DIR]:
+for _dir in [AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEOS_DIR, SCENES_DIR, STORIES_DIR]:
     _dir.mkdir(parents=True, exist_ok=True)
 
 # --- Video ---

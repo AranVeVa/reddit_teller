@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import BACKGROUND_AUDIO, BACKGROUND_VIDEO, AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEO_WIDTH, VIDEO_HEIGHT, STORIES_DIR
+from config import BACKGROUND_AUDIO, BACKGROUND_VIDEO, AUDIOS_DIR, MIXED_DIR, SUBS_DIR, SCENES_DIR, VIDEO_WIDTH, VIDEO_HEIGHT, STORIES_DIR, OPENAI_API_KEY
 from scripts.reddit      import obtener_historias, guardar_historias, mostrar_historias
 from scripts.voice       import archivo_a_audio
 from scripts.audio_mixer import mix_audio
@@ -234,36 +234,85 @@ def main():
         ui.info("Proceso terminado.")
         return
 
-    start_sec = ask_int("¿Desde qué segundo del video de fondo empezar?", 0)
+    # ── Elegir tipo de fondo ────────────────────────────────────────────────
+    story_id  = historias[0]["id"]
+    use_scenes = False
 
-    # Preguntar sobre subtítulos *antes* de renderizar para poder
-    # quemarlos en la misma pasada y evitar renderizar dos veces.
-    add_subs = ask("¿Agregar subtítulos al video?")
-    srt_path = None
-    if add_subs:
+    if OPENAI_API_KEY:
+        ui.info("\n¿Qué fondo quieres usar?")
+        print()
+        print("  [1] Video de fondo clásico")
+        print("  [2] Escenas AI generadas (gpt-image-1 + Ken Burns)")
+        bg_choice = input("\nElige [1/2]: ").strip()
+        use_scenes = (bg_choice == "2")
+    else:
+        ui.warn("OPENAI_API_KEY no encontrada — usando video de fondo clásico.")
+
+    # ── Opción A: escenas AI ────────────────────────────────────────────────
+    if use_scenes:
+        from scripts.scene_generator import generate_scenes
+        from scripts.scene_video import generate_scene_video
+
+        # 1. Necesitamos el SRT primero para poder analizar la historia
+        ui.info("\nGenerando subtítulos (necesarios para el análisis de escenas)...")
         words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
         is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
         srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical)
-        # Organize subtitles into subreddit subfolder with story ID
         subs_sub_dir = SUBS_DIR / subreddit
         subs_sub_dir.mkdir(parents=True, exist_ok=True)
         srt_new_path = subs_sub_dir / srt_path.name
         srt_path.rename(srt_new_path)
         srt_path = srt_new_path
 
-    # Preguntar sobre modo oscuro para la tarjeta de Reddit
+        # 2. Generar imágenes de escenas
+        ui.info("\nGenerando imágenes de escenas con GPT-4o + gpt-image-1...")
+        scenes_dir = generate_scenes(story_id)
+        if not scenes_dir:
+            ui.error("Falló la generación de escenas. Saliendo.")
+            return
+
+        # 3. Crear video de escenas (Ken Burns + dissolve)
+        ui.info("\nCreando video de escenas...")
+        scene_video_path = generate_scene_video(story_id)
+        if not scene_video_path:
+            ui.error("Falló la creación del video de escenas. Saliendo.")
+            return
+
+        background = scene_video_path
+        start_sec  = 0
+
+    # ── Opción B: video clásico ─────────────────────────────────────────────
+    else:
+        start_sec = ask_int("¿Desde qué segundo del video de fondo empezar?", 0)
+
+        add_subs = ask("¿Agregar subtítulos al video?")
+        srt_path = None
+        if add_subs:
+            words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
+            is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
+            srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical)
+            subs_sub_dir = SUBS_DIR / subreddit
+            subs_sub_dir.mkdir(parents=True, exist_ok=True)
+            srt_new_path = subs_sub_dir / srt_path.name
+            srt_path.rename(srt_new_path)
+            srt_path = srt_new_path
+
+        background = BACKGROUND_VIDEO
+
+    # ── Dark mode ───────────────────────────────────────────────────────────
     dark_mode = ask("¿Usar la tarjeta de Reddit en modo oscuro (dark mode)?")
 
+    # ── Render final ────────────────────────────────────────────────────────
     video_path = create_video(
-        mixed_path, 
-        BACKGROUND_VIDEO, 
-        subreddit, 
-        start_second=start_sec, 
-        srt_path=srt_path, 
-        story_id=historias[0]["id"],
+        mixed_path,
+        background,
+        subreddit,
+        start_second=start_sec,
+        srt_path=srt_path,
+        story_id=story_id,
         historias=historias,
         story_offsets=story_offsets,
-        dark_mode=dark_mode
+        dark_mode=dark_mode,
     )
     if not video_path:
         ui.error("Error creando video. Saliendo.")
