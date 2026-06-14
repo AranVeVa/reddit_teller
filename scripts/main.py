@@ -251,7 +251,7 @@ def main():
     # ── Opción A: escenas AI ────────────────────────────────────────────────
     if use_scenes:
         from scripts.scene_generator import generate_scenes
-        from scripts.scene_video import generate_scene_video
+        from scripts.scene_video import build_scene_clip
 
         # 1. Necesitamos el SRT primero para poder analizar la historia
         ui.info("\nGenerando subtítulos (necesarios para el análisis de escenas)...")
@@ -271,15 +271,19 @@ def main():
             ui.error("Falló la generación de escenas. Saliendo.")
             return
 
-        # 3. Crear video de escenas (Ken Burns + dissolve)
-        ui.info("\nCreando video de escenas...")
-        scene_video_path = generate_scene_video(story_id)
-        if not scene_video_path:
-            ui.error("Falló la creación del video de escenas. Saliendo.")
+        # 3. Construir clip de escenas en memoria (sin render intermedio)
+        ui.info("\nConstruyendo clip de escenas (Ken Burns + dissolve)...")
+        scene_clip = build_scene_clip(story_id)
+        if not scene_clip:
+            ui.error("Falló la construcción del clip de escenas. Saliendo.")
             return
 
-        background = scene_video_path
+        background = scene_clip   # VideoClip — create_video() lo acepta directamente
         start_sec  = 0
+
+        add_subs = ask("¿Agregar subtítulos al video?")
+        if not add_subs:
+            srt_path = None
 
     # ── Opción B: video clásico ─────────────────────────────────────────────
     else:

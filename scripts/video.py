@@ -49,8 +49,11 @@ def create_video(
       - Pega el audio
     Devuelve la ruta del video generado.
     """
-    audio_path       = Path(audio_path)
-    background_video = Path(background_video)
+    audio_path = Path(audio_path)
+    # background_video puede ser una Path (archivo) o un VideoClip ya construido
+    is_clip_object = not isinstance(background_video, (str, Path))
+    if not is_clip_object:
+        background_video = Path(background_video)
     # If subtitles requested, generate a subtitled filename so the
     # render is produced in a single pass.
     sub_dir = VIDEOS_DIR / output_name
@@ -66,10 +69,14 @@ def create_video(
     temp_cards = []
     try:
         audio = AudioFileClip(str(audio_path))
-        video = VideoFileClip(str(background_video))
 
-        # Recortar a partir del segundo indicado
-        video = video.subclipped(start_second, start_second + audio.duration)
+        if is_clip_object:
+            # Clip ya construido (ej: escenas AI) — trimear al dur del audio
+            video = background_video.subclipped(0, min(audio.duration, background_video.duration))
+        else:
+            video = VideoFileClip(str(background_video))
+            # Recortar a partir del segundo indicado
+            video = video.subclipped(start_second, start_second + audio.duration)
 
         # Crop y escala a 9:16
         video = _crop_to_vertical(video)
@@ -213,6 +220,7 @@ def create_video(
             str(output_path),
             codec="libx264",
             audio_codec="aac",
+            fps=video.fps,
             bitrate="8000k",
             ffmpeg_params=["-crf", "20"] + (["-preset", "ultrafast"] if fast_mode else []),
         )

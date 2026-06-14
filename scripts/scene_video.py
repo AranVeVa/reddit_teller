@@ -34,7 +34,7 @@ from scripts import termui as ui
 
 
 # ── Configuración ───────────────────────────────────────────────────────────
-TRANSITION_DURATION = 0.5   # duración del dissolve entre clips (segundos)
+TRANSITION_DURATION = 1.5   # duración del dissolve entre clips (segundos)
 LAST_EXTRA_SECONDS  = 3.0   # segundos extra al final del último clip
 FADEOUT_DURATION    = 3.5   # duración del fade-out final
 OUTPUT_FPS          = 24
@@ -108,8 +108,11 @@ def find_audio(story_id: str, subreddit: str) -> Path | None:
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
-def generate_scene_video(story_id: str) -> Path | None:
-    # 1. Cargar scenes.json
+def build_scene_clip(story_id: str) -> "CompositeVideoClip | None":
+    """
+    Construye y devuelve el clip compuesto de escenas (sin audio, sin render).
+    Listo para ser usado directamente como fondo en create_video().
+    """
     scenes_dir  = SCENES_DIR / story_id
     scenes_json = scenes_dir / "scenes.json"
 
@@ -123,16 +126,9 @@ def generate_scene_video(story_id: str) -> Path | None:
 
     scenes    = plan["scenes"]
     subreddit = plan["subreddit"]
-    ui.success(f"Plan: {len(scenes)} escenas | r/{subreddit} | {plan['total_duration']:.1f}s")
+    ui.success(f"Plan cargado: {len(scenes)} escenas | r/{subreddit} | {plan['total_duration']:.1f}s")
 
-    # 2. Buscar audio
-    audio_path = find_audio(story_id, subreddit)
-    if audio_path:
-        ui.success(f"Audio: {audio_path.name}")
-    else:
-        ui.warn("No se encontró audio. El video se generará sin sonido.")
-
-    # 3. Construir clips con Ken Burns
+    # Construir clips con Ken Burns
     ui.info("Aplicando efecto Ken Burns...")
     image_clips = []
     durations   = []
@@ -143,7 +139,6 @@ def generate_scene_video(story_id: str) -> Path | None:
         t_end    = scene["time_end"]
         duration = float(t_end - t_start)
 
-        # Último clip: tiempo extra
         if i == len(scenes) - 1:
             duration += LAST_EXTRA_SECONDS
 
@@ -162,7 +157,7 @@ def generate_scene_video(story_id: str) -> Path | None:
         image_clips.append(clip)
         durations.append(duration)
 
-    # 4. Ensamblar con dissolve
+    # Ensamblar con dissolve
     ui.info(f"Ensamblando clips con dissolve ({TRANSITION_DURATION}s)...")
     all_clips = []
     t = 0.0
@@ -170,37 +165,59 @@ def generate_scene_video(story_id: str) -> Path | None:
     for i, (clip, dur) in enumerate(zip(image_clips, durations)):
         start = t
 
-        # Dissolve-in en todos excepto el primero
         if i > 0:
             clip  = FadeIn(TRANSITION_DURATION).apply(clip)
-            start = t - TRANSITION_DURATION  # solapar con el clip anterior
+            start = t - TRANSITION_DURATION
 
-        # Fade-out solo en el último
         if i == len(image_clips) - 1:
             clip = FadeOut(FADEOUT_DURATION).apply(clip)
 
         clip = clip.with_start(start)
         all_clips.append(clip)
-
-        # El tiempo base para el siguiente clip es el inicio del actual + su duración total
         t = start + dur
 
     total_duration = t
-    ui.info(f"Duración total del video: {total_duration:.1f}s")
+    ui.info(f"Duración total: {total_duration:.1f}s")
 
-    # 5. Composite
     final = CompositeVideoClip(all_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT))
-    final = final.with_duration(total_duration)
+    final = final.with_duration(total_duration).with_fps(OUTPUT_FPS)
+    return final
 
-    # 6. Agregar audio
+
+def generate_scene_video(story_id: str) -> Path | None:
+    """
+    Uso standalone: construye el clip de escenas, le agrega el audio
+    mezclado y lo renderiza a un archivo mp4.
+    """
+    scenes_dir  = SCENES_DIR / story_id
+    scenes_json = scenes_dir / "scenes.json"
+    if not scenes_json.exists():
+        ui.error(f"No se encontró scenes.json en {scenes_dir}")
+        return None
+    with open(scenes_json, encoding="utf-8") as f:
+        plan = json.load(f)
+    subreddit = plan["subreddit"]
+
+    # Buscar audio
+    audio_path = find_audio(story_id, subreddit)
+    if audio_path:
+        ui.success(f"Audio: {audio_path.name}")
+    else:
+        ui.warn("No se encontró audio. El video se generará sin sonido.")
+
+    # Construir clip
+    final = build_scene_clip(story_id)
+    if final is None:
+        return None
+
+    # Agregar audio
     if audio_path:
         audio = AudioFileClip(str(audio_path))
-        # Recortar si el audio es más largo que el video
-        if audio.duration > total_duration:
-            audio = audio.subclipped(0, total_duration)
+        if audio.duration > final.duration:
+            audio = audio.subclipped(0, final.duration)
         final = final.with_audio(audio)
 
-    # 7. Renderizar
+    # Renderizar
     output_path = scenes_dir / f"{story_id}_scenes.mp4"
     ui.info(f"Renderizando → {output_path}...")
     print()
