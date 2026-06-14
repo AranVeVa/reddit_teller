@@ -84,16 +84,66 @@ def get_silent_audio_path(duration: float) -> Path:
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="reddit_teller 2.0 — automatic pipeline")
+    parser.add_argument("--subreddit", "-s", help="URL o nombre del subreddit")
+    parser.add_argument("--limit", "-l", type=int, help="Número de historias a incluir")
+    parser.add_argument("--duration", "-d", choices=["1", "2", "3", "4", "5"], help="Preset de duración")
+    parser.add_argument("--min-secs", type=int, help="Duración mínima en segundos (para opción personalizada)")
+    parser.add_argument("--max-secs", type=int, help="Duración máxima en segundos (para opción personalizada)")
+    parser.add_argument("--order", "-o", choices=["hot", "new", "top"], help="Orden de los posts")
+    parser.add_argument("--scenes", action="store_true", default=None, help="Usar escenas generadas por IA")
+    parser.add_argument("--no-scenes", action="store_false", dest="scenes", help="Usar video de fondo clásico")
+    parser.add_argument("--subs", action="store_true", default=None, help="Agregar subtítulos quemados")
+    parser.add_argument("--no-subs", action="store_false", dest="subs", help="No agregar subtítulos")
+    parser.add_argument("--words-per-card", "-w", type=int, help="Palabras por tarjeta de subtítulo")
+    parser.add_argument("--dark-mode", action="store_true", default=None, help="Usar Reddit card en modo oscuro")
+    parser.add_argument("--light-mode", action="store_false", dest="dark_mode", help="Usar Reddit card en modo claro")
+    parser.add_argument("--start-sec", type=int, help="Segundo de inicio para el video clásico")
+    parser.add_argument("--yes", "-y", action="store_true", help="Auto-aprobar todas las confirmaciones")
+    args = parser.parse_args()
+
     ui.header("reddit_teller 2.0")
 
-    url = input(f"\n{ui.prompt_str('URL o nombre del subreddit: ')}").strip()
+    def confirm(prompt_text: str) -> bool:
+        if args.yes:
+            return True
+        return ask(prompt_text)
+
+    # 1. Subreddit
+    if args.subreddit:
+        url = args.subreddit
+    else:
+        url = input(f"\n{ui.prompt_str('URL o nombre del subreddit: ')}").strip()
     subreddit = url.split("/r/")[-1].strip("/").split("/")[0] if "/r/" in url else url
 
-    limite = ask_int("¿Cuántas historias incluir en el video?", 1)
+    # 2. Límite
+    if args.limit is not None:
+        limite = args.limit
+    else:
+        limite = ask_int("¿Cuántas historias incluir en el video?", 1)
 
-    min_chars, max_chars = elegir_duracion()
+    # 3. Duración
+    if args.duration:
+        opcion = args.duration
+        label, segs = DURACION_PRESETS[opcion]
+        if segs == -1:
+            min_segs = args.min_secs if args.min_secs is not None else ask_int("Duración mínima por historia (segundos)", 30)
+            max_segs = args.max_secs if args.max_secs is not None else ask_int("Duración máxima por historia (segundos)", 120)
+            min_chars = min_segs * CHARS_PER_SECOND
+            max_chars = max_segs * CHARS_PER_SECOND
+        else:
+            min_chars = int(segs * CHARS_PER_SECOND * 0.7)
+            max_chars = int(segs * CHARS_PER_SECOND * 1.5)
+        ui.success(f"{label}: buscando historias de {min_chars}–{max_chars} caracteres")
+    else:
+        min_chars, max_chars = elegir_duracion()
 
-    orden = input(f"\n{ui.prompt_str('Orden de posts [hot/new/top] (hot): ')}").strip() or "hot"
+    # 4. Orden
+    if args.order:
+        orden = args.order
+    else:
+        orden = input(f"\n{ui.prompt_str('Orden de posts [hot/new/top] (hot): ')}").strip() or "hot"
 
     ui.info(f"Obteniendo historias de r/{subreddit}...")
     historias = obtener_historias(
@@ -119,7 +169,7 @@ def main():
 
     archivo_txt = guardar_historias(historias, subreddit)
 
-    if not ask("¿Continuar con la generación de audio (ElevenLabs)?"):
+    if not confirm("¿Continuar con la generación de audio (ElevenLabs)?"):
         ui.info("Proceso terminado.")
         return
 
@@ -215,7 +265,7 @@ def main():
     audio_path.rename(audio_new_path)
     audio_path = audio_new_path
 
-    if not ask("¿Continuar con la mezcla de audio?"):
+    if not confirm("¿Continuar con la mezcla de audio?"):
         ui.info("Proceso terminado.")
         return
 
@@ -230,7 +280,7 @@ def main():
     mixed_path.rename(mixed_new_path)
     mixed_path = mixed_new_path
 
-    if not ask("¿Continuar con la creación del video?"):
+    if not confirm("¿Continuar con la creación del video?"):
         ui.info("Proceso terminado.")
         return
 
@@ -238,7 +288,9 @@ def main():
     story_id  = historias[0]["id"]
     use_scenes = False
 
-    if OPENAI_API_KEY:
+    if args.scenes is not None:
+        use_scenes = args.scenes
+    elif OPENAI_API_KEY:
         ui.info("\n¿Qué fondo quieres usar?")
         print()
         print("  [1] Video de fondo clásico")
@@ -255,7 +307,10 @@ def main():
 
         # 1. Necesitamos el SRT primero para poder analizar la historia
         ui.info("\nGenerando subtítulos (necesarios para el análisis de escenas)...")
-        words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
+        if args.words_per_card is not None:
+            words_per_card = args.words_per_card
+        else:
+            words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 6)
         is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
         srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical)
         subs_sub_dir = SUBS_DIR / subreddit
@@ -281,18 +336,30 @@ def main():
         background = scene_clip   # VideoClip — create_video() lo acepta directamente
         start_sec  = 0
 
-        add_subs = ask("¿Agregar subtítulos al video?")
+        if args.subs is not None:
+            add_subs = args.subs
+        else:
+            add_subs = ask("¿Agregar subtítulos al video?")
         if not add_subs:
             srt_path = None
 
     # ── Opción B: video clásico ─────────────────────────────────────────────
     else:
-        start_sec = ask_int("¿Desde qué segundo del video de fondo empezar?", 0)
+        if args.start_sec is not None:
+            start_sec = args.start_sec
+        else:
+            start_sec = ask_int("¿Desde qué segundo del video de fondo empezar?", 0)
 
-        add_subs = ask("¿Agregar subtítulos al video?")
+        if args.subs is not None:
+            add_subs = args.subs
+        else:
+            add_subs = ask("¿Agregar subtítulos al video?")
         srt_path = None
         if add_subs:
-            words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
+            if args.words_per_card is not None:
+                words_per_card = args.words_per_card
+            else:
+                words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
             is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
             srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical)
             subs_sub_dir = SUBS_DIR / subreddit
@@ -304,7 +371,10 @@ def main():
         background = BACKGROUND_VIDEO
 
     # ── Dark mode ───────────────────────────────────────────────────────────
-    dark_mode = ask("¿Usar la tarjeta de Reddit en modo oscuro (dark mode)?")
+    if args.dark_mode is not None:
+        dark_mode = args.dark_mode
+    else:
+        dark_mode = ask("¿Usar la tarjeta de Reddit en modo oscuro (dark mode)?")
 
     # ── Render final ────────────────────────────────────────────────────────
     video_path = create_video(

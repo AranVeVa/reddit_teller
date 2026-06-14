@@ -162,11 +162,11 @@ Divide this horror story into 3-5 scenes. The last scene must end exactly at sec
         return None
 
 
-def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1") -> bytes | None:
+def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1") -> tuple[bytes | None, str | None]:
     """
     Genera una imagen con la API de OpenAI.
     Soporta 'gpt-image-1' (nuevo) y 'dall-e-3'.
-    Devuelve los bytes de la imagen PNG.
+    Devuelve (bytes, None) si tiene éxito, o (None, error_message) si falla.
     """
     full_prompt = f"{prompt}\n\nVISUAL STYLE: {VISUAL_STYLE}"
 
@@ -200,8 +200,9 @@ def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1") -> b
         resp = requests.post(endpoint, json=payload, headers=headers, timeout=120)
 
         if resp.status_code != 200:
-            ui.error(f"  Image API error ({resp.status_code}): {resp.text[:300]}")
-            return None
+            error_msg = resp.text
+            ui.error(f"  Image API error ({resp.status_code}): {error_msg[:300]}")
+            return None, error_msg
 
         data = resp.json()
         image_data = data["data"][0]
@@ -209,17 +210,69 @@ def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1") -> b
         # gpt-image-1 may return b64_json; dall-e-3 returns url
         if "b64_json" in image_data and image_data["b64_json"]:
             import base64
-            return base64.b64decode(image_data["b64_json"])
+            return base64.b64decode(image_data["b64_json"]), None
         elif "url" in image_data and image_data["url"]:
             img_resp = requests.get(image_data["url"], timeout=60)
-            return img_resp.content
+            return img_resp.content, None
         else:
             ui.error("  No se encontró imagen en la respuesta.")
-            return None
+            return None, "No image found in response data"
 
     except Exception as e:
         ui.error(f"  Error generando imagen: {e}")
-        return None
+        return None, str(e)
+
+
+def rewrite_prompt_for_safety(original_prompt: str, error_message: str) -> str | None:
+    """
+    Pide a GPT-4o que reescriba un prompt que fue rechazado por el sistema de seguridad
+    de OpenAI para que cumpla con las políticas de contenido sin perder la atmósfera de terror.
+    """
+    ui.warn("  [Sistema de Seguridad] El prompt fue rechazado. Pidiendo a GPT-4o que lo suavice/sanitice...")
+    
+    system_prompt = (
+        "You are an expert prompt engineer. An image generation prompt was rejected by OpenAI's safety system. "
+        "Your task is to rewrite the prompt so that it is 100% compliant with OpenAI's safety guidelines "
+        "(absolutely avoiding words related to blood, gore, nudity, violence, body parts, or anything that "
+        "could trigger filters) while keeping the same dark, spooky, and unsettling papercraft horror atmosphere. "
+        "Focus on metaphors, dark shadows, stylized representations, and moody lighting rather than explicit scary figures. "
+        "Return ONLY the rewritten prompt as plain text, with no introduction, quotes, or formatting."
+    )
+    
+    user_message = (
+        f"Original Prompt: {original_prompt}\n\n"
+        f"Safety System Error Message: {error_message}\n\n"
+        f"Rewrite it to be safe, clean, and guidelines-compliant."
+    )
+    
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    
+    try:
+        resp = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            json={
+                "model": "gpt-4o",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                "temperature": 0.5,
+            },
+            headers=headers,
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            new_prompt = resp.json()["choices"][0]["message"]["content"].strip()
+            ui.success(f"  [Reescrito] Nuevo prompt sugerido: {new_prompt}")
+            return new_prompt
+        else:
+            ui.error(f"  Error al reescribir prompt ({resp.status_code}): {resp.text}")
+    except Exception as e:
+        ui.error(f"  Error en llamada de reescritura: {e}")
+    return None
 
 
 def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
@@ -290,14 +343,22 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
 
         ui.info(f"Escena {n}/{len(scenes)}: [{t_start}s - {t_end}s] {beat}")
 
-        img_bytes = generate_image(prompt, n, model=model)
+        img_bytes, error_msg = generate_image(prompt, n, model=model)
+
+        # Si falla (ej: por seguridad o error 400), intentamos corregirlo con GPT-4o
+        if not img_bytes and error_msg:
+            if "safety" in error_msg.lower() or "policy" in error_msg.lower() or "rejected" in error_msg.lower() or "violation" in error_msg.lower():
+                new_prompt = rewrite_prompt_for_safety(prompt, error_msg)
+                if new_prompt:
+                    time.sleep(2)  # Pausa corta
+                    img_bytes, error_msg = generate_image(new_prompt, n, model=model)
 
         if img_bytes:
             img_path = out_dir / f"scene_{n:02d}.png"
             img_path.write_bytes(img_bytes)
             ui.success(f"  Guardada: {img_path.name} ({len(img_bytes) // 1024} KB)")
         else:
-            ui.warn(f"  Falló la imagen de escena {n}. Continuando...")
+            ui.warn(f"  Falló la imagen de escena {n} (incluso tras reintentar desinfección).")
             failed.append(n)
 
         # Pausa entre generaciones para evitar rate limits
@@ -305,8 +366,29 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
             time.sleep(2)
 
     print()
+    # ── Fallback para imágenes fallidas ──────────────────────────────────────
     if failed:
-        ui.warn(f"Escenas que fallaron: {failed}")
+        ui.warn(f"Escenas que fallaron: {failed}. Aplicando fallbacks...")
+        successful_imgs = sorted(list(out_dir.glob("scene_*.png")))
+        if successful_imgs:
+            # Usar la primera imagen exitosa como plantilla de fallback por defecto
+            fallback_source = successful_imgs[0]
+            
+            for f_num in failed:
+                dest_path = out_dir / f"scene_{f_num:02d}.png"
+                # Intentar usar la escena anterior (n-1) si existe
+                prev_path = out_dir / f"scene_{f_num-1:02d}.png"
+                if prev_path.exists():
+                    import shutil
+                    shutil.copy(prev_path, dest_path)
+                    ui.success(f"  [Fallback] Escena {f_num} copiada de Escena {f_num-1:02d}")
+                else:
+                    import shutil
+                    shutil.copy(fallback_source, dest_path)
+                    ui.success(f"  [Fallback] Escena {f_num} copiada de {fallback_source.name}")
+        else:
+            ui.error("Todas las imágenes de las escenas fallaron. No hay imágenes disponibles para fallback.")
+            return None
     else:
         ui.success(f"Todas las imágenes generadas correctamente en: {out_dir}")
 
