@@ -112,6 +112,8 @@ def build_scene_clip(story_id: str) -> "CompositeVideoClip | None":
     """
     Construye y devuelve el clip compuesto de escenas (sin audio, sin render).
     Listo para ser usado directamente como fondo en create_video().
+    Las transiciones dissolve (FadeIn) se solapan hacia atrás para que el inicio
+    de cada escena coincida exactamente con su marca de tiempo en la narración.
     """
     scenes_dir  = SCENES_DIR / story_id
     scenes_json = scenes_dir / "scenes.json"
@@ -128,19 +130,28 @@ def build_scene_clip(story_id: str) -> "CompositeVideoClip | None":
     subreddit = plan["subreddit"]
     ui.success(f"Plan cargado: {len(scenes)} escenas | r/{subreddit} | {plan['total_duration']:.1f}s")
 
-    # Construir clips con Ken Burns
+    # Construir clips con Ken Burns y transiciones alineadas
     ui.info("Aplicando efecto Ken Burns...")
-    image_clips = []
-    durations   = []
+    all_clips = []
 
     for i, scene in enumerate(scenes):
         n        = scene["scene_number"]
-        t_start  = scene["time_start"]
-        t_end    = scene["time_end"]
-        duration = float(t_end - t_start)
+        t_start  = float(scene["time_start"])
+        t_end    = float(scene["time_end"])
+        base_dur = t_end - t_start
 
+        # Si no es la primera escena, empezamos TRANSITION_DURATION segundos antes
+        # para que se desvanezca (FadeIn) sobre la escena anterior.
+        if i > 0:
+            start_time = t_start - TRANSITION_DURATION
+            clip_dur   = base_dur + TRANSITION_DURATION
+        else:
+            start_time = t_start
+            clip_dur   = base_dur
+
+        # Añadir segundos extra al final de la última escena
         if i == len(scenes) - 1:
-            duration += LAST_EXTRA_SECONDS
+            clip_dur += LAST_EXTRA_SECONDS
 
         img_path = scenes_dir / f"scene_{n:02d}.png"
         if not img_path.exists():
@@ -149,35 +160,25 @@ def build_scene_clip(story_id: str) -> "CompositeVideoClip | None":
 
         ui.info(
             f"  Escena {n}: {img_path.name} "
-            f"[{t_start}s–{t_end}s]"
-            f"{' +3s extra' if i == len(scenes)-1 else ''} "
-            f"→ {duration:.1f}s"
+            f"[{t_start:.1f}s–{t_end:.1f}s] "
+            f"start={start_time:.1f}s, dur={clip_dur:.1f}s"
         )
-        clip = make_ken_burns_clip(img_path, duration, VIDEO_WIDTH, VIDEO_HEIGHT)
-        image_clips.append(clip)
-        durations.append(duration)
 
-    # Ensamblar con dissolve
-    ui.info(f"Ensamblando clips con dissolve ({TRANSITION_DURATION}s)...")
-    all_clips = []
-    t = 0.0
+        clip = make_ken_burns_clip(img_path, clip_dur, VIDEO_WIDTH, VIDEO_HEIGHT)
 
-    for i, (clip, dur) in enumerate(zip(image_clips, durations)):
-        start = t
-
+        # Aplicar transiciones
         if i > 0:
-            clip  = FadeIn(TRANSITION_DURATION).apply(clip)
-            start = t - TRANSITION_DURATION
+            clip = FadeIn(TRANSITION_DURATION).apply(clip)
 
-        if i == len(image_clips) - 1:
+        if i == len(scenes) - 1:
             clip = FadeOut(FADEOUT_DURATION).apply(clip)
 
-        clip = clip.with_start(start)
+        clip = clip.with_start(start_time)
         all_clips.append(clip)
-        t = start + dur
 
-    total_duration = t
-    ui.info(f"Duración total: {total_duration:.1f}s")
+    # Duración total real del video (incluyendo el tiempo extra del final)
+    total_duration = float(scenes[-1]["time_end"]) + LAST_EXTRA_SECONDS
+    ui.info(f"Duración total del fondo: {total_duration:.1f}s")
 
     final = CompositeVideoClip(all_clips, size=(VIDEO_WIDTH, VIDEO_HEIGHT))
     final = final.with_duration(total_duration).with_fps(OUTPUT_FPS)

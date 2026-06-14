@@ -71,8 +71,8 @@ def create_video(
         audio = AudioFileClip(str(audio_path))
 
         if is_clip_object:
-            # Clip ya construido (ej: escenas AI) — trimear al dur del audio
-            video = background_video.subclipped(0, min(audio.duration, background_video.duration))
+            # Para escenas AI, no recortamos para conservar los segundos extra con fadeout al final
+            video = background_video
         else:
             video = VideoFileClip(str(background_video))
             # Recortar a partir del segundo indicado
@@ -204,6 +204,7 @@ def create_video(
                 clips.append(txt)
 
             final = CompositeVideoClip(clips)
+            final = final.with_duration(video.duration)
             final.write_videofile(
                 str(output_path),
                 codec="libx264",
