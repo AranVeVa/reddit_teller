@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import ELEVENLABS_API_KEYS, ELEVENLABS_VOICE_ID, AUDIOS_DIR
+from config import ELEVENLABS_API_KEYS, ELEVENLABS_VOICE_ID, AUDIOS_DIR, ELEVENLABS_SPEED
 from scripts import termui as ui
 
 # Ciclo infinito sobre las keys → rota automáticamente
@@ -33,6 +33,7 @@ def text_to_audio(texto: str, nombre: str) -> Path | None:
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.8,
+            "speed": ELEVENLABS_SPEED,
         },
     }
 
