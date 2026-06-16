@@ -34,12 +34,12 @@ from scripts import termui as ui
 
 
 # ── Configuración ───────────────────────────────────────────────────────────
-TRANSITION_DURATION = 1.5   # duración del dissolve entre clips (segundos)
+TRANSITION_DURATION = 2.2   # duración del dissolve entre clips (segundos)
 LAST_EXTRA_SECONDS  = 3.0   # segundos extra al final del último clip
 FADEOUT_DURATION    = 3.5   # duración del fade-out final
 OUTPUT_FPS          = 24
 ZOOM_START          = 1.0   # zoom inicial (100%)
-ZOOM_END            = 1.15  # zoom final   (115%)
+ZOOM_END            = 1.25  # zoom final   (125%)
 
 
 # ── Ken Burns ───────────────────────────────────────────────────────────────

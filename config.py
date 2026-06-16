@@ -17,6 +17,7 @@ REDDIT_USER_AGENT    = os.getenv("REDDIT_USER_AGENT", "story_teller")
 _raw_keys = os.getenv("ELEVENLABS_API_KEYS", "")
 ELEVENLABS_API_KEYS = [k.strip() for k in _raw_keys.split(",") if k.strip()]
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+ELEVENLABS_SPEED    = float(os.getenv("ELEVENLABS_SPEED", 1.1))
 
 # --- OpenAI ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

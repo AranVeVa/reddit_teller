@@ -36,13 +36,21 @@ SCENE_ANALYSIS_SYSTEM = """You are a visual storytelling director specializing i
 
 Given the full text of a horror story, your task is to:
 1. Read and understand the complete narrative arc.
-2. Divide the story into 3 to 5 scenes maximum (only add more if absolutely necessary).
-3. Each scene must represent a major narrative change (beginning, escalation, climax, aftermath).
-4. Provide exact second-level timing for each scene covering the full story duration with no gaps.
-5. Write a cinematic image prompt for each scene focused purely on what is VISIBLE.
+2. Create a VISUAL BIBLE: define the world, environment, key locations, and characters that appear in the story. This visual bible will be prepended to EVERY image prompt to ensure absolute visual consistency across all scenes.
+3. Decide how many scenes are appropriate for the story duration. Use this guideline:
+   - Under 30 seconds: 2 scenes
+   - 30-60 seconds: 3 scenes
+   - 60-90 seconds: 4 scenes
+   - 90-150 seconds: 5-6 scenes
+   - Over 150 seconds: 6-8 scenes
+   You may adjust slightly based on narrative beats, but respect the approximate ratio.
+4. Each scene must represent a major narrative change (beginning, escalation, climax, aftermath).
+5. Provide exact second-level timing for each scene covering the full story duration with no gaps.
+6. Write a cinematic image prompt for each scene focused purely on what is VISIBLE.
 
 Return ONLY a valid JSON object in this exact format:
 {
+  "visual_bible": "Detailed description of the world/environment, recurring locations (architecture, colors, textures, lighting), and each character (appearance, clothing, distinguishing features, approximate age). This must be specific enough that a different artist could recreate the same world and characters consistently. Example: 'Setting: A cramped one-bedroom apartment in a Soviet-era concrete block. Yellowed wallpaper peeling at the corners. A single bare bulb hanging from the ceiling. Character: ANNA — mid-30s woman, pale skin, dark circles under her eyes, long black hair always tied in a loose braid, wearing a faded blue nightgown.'",
   "scenes": [
     {
       "scene_number": 1,
@@ -50,18 +58,20 @@ Return ONLY a valid JSON object in this exact format:
       "time_end": 12,
       "narrative_beat": "Normal situation",
       "description": "Brief cinematic description of what is happening, the emotional tone, camera angle, and key visual elements.",
-      "image_prompt": "Detailed visual prompt focusing only on what should be seen in the image. No plot explanation."
+      "image_prompt": "Detailed visual prompt focusing only on what should be seen in THIS SPECIFIC scene. Do NOT repeat the visual bible here — it will be prepended automatically. Focus on action, composition, camera angle, lighting changes, and emotional tone unique to this moment."
     }
   ]
 }
 
 Rules:
+- visual_bible is REQUIRED and must be detailed enough for visual consistency.
 - time_start and time_end are whole integers in seconds.
 - time_start of scene N+1 must equal time_end of scene N.
 - First scene always starts at 0.
 - Last scene must end at the total duration provided.
-- Maximum 5 scenes. Prefer 3-4.
+- The number of scenes must match the duration guideline above.
 - image_prompt must be purely visual, no narration.
+- image_prompt should NOT repeat environment/character descriptions from visual_bible.
 - Do NOT include the visual style reference in image_prompt — it will be appended automatically."""
 
 
@@ -112,18 +122,32 @@ def parse_srt_to_text(srt_path: Path) -> tuple[str, float]:
     return full_text, total_duration
 
 
-def analyze_story_with_gpt(story_text: str, total_duration: float) -> list[dict] | None:
+def analyze_story_with_gpt(story_text: str, total_duration: float) -> tuple[list, str] | None:
     """
     Llama a GPT-4o para generar el desglose de escenas.
     Devuelve la lista de escenas en formato dict.
     """
     ui.info("Analizando la historia con GPT-4o...")
+
+    # Calcular escenas sugeridas basado en la duración
+    if total_duration < 30:
+        suggested = 2
+    elif total_duration < 60:
+        suggested = 3
+    elif total_duration < 90:
+        suggested = 4
+    elif total_duration < 150:
+        suggested = 5
+    else:
+        suggested = min(8, max(6, int(total_duration / 25)))
+
+    ui.info(f"Duración: {int(total_duration)}s → sugiriendo ~{suggested} escenas")
     
     user_message = f"""Story text (total duration: {int(total_duration)} seconds):
 
 {story_text}
 
-Divide this horror story into 3-5 scenes. The last scene must end exactly at second {int(total_duration)}."""
+Based on the duration ({int(total_duration)} seconds), create approximately {suggested} scenes. The last scene must end exactly at second {int(total_duration)}. Remember to include the visual_bible field with detailed descriptions of the world and characters."""
 
     payload = {
         "model": "gpt-4o",
@@ -154,21 +178,32 @@ Divide this horror story into 3-5 scenes. The last scene must end exactly at sec
         content = data["choices"][0]["message"]["content"]
         parsed = json.loads(content)
         scenes = parsed.get("scenes", [])
+        visual_bible = parsed.get("visual_bible", "")
+        if visual_bible:
+            ui.success(f"Visual Bible generada ({len(visual_bible)} chars)")
+        else:
+            ui.warn("No se generó visual bible — la consistencia visual puede variar.")
         ui.success(f"Plan generado: {len(scenes)} escenas")
-        return scenes
+        return scenes, visual_bible
 
     except Exception as e:
         ui.error(f"Error al llamar a GPT: {e}")
         return None
 
 
-def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1") -> tuple[bytes | None, str | None]:
+def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1", visual_bible: str = "") -> tuple[bytes | None, str | None]:
     """
     Genera una imagen con la API de OpenAI.
     Soporta 'gpt-image-1' (nuevo) y 'dall-e-3'.
     Devuelve (bytes, None) si tiene éxito, o (None, error_message) si falla.
     """
-    full_prompt = f"{prompt}\n\nVISUAL STYLE: {VISUAL_STYLE}"
+    # Construir prompt completo: visual bible + prompt de escena + estilo visual
+    parts = []
+    if visual_bible:
+        parts.append(f"VISUAL BIBLE (maintain these designs consistently):\n{visual_bible}")
+    parts.append(f"SCENE:\n{prompt}")
+    parts.append(f"VISUAL STYLE: {VISUAL_STYLE}")
+    full_prompt = "\n\n".join(parts)
 
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -304,9 +339,10 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
     ui.info(f"Duración total: {total_duration:.1f}s | Caracteres: {len(story_text)}")
 
     # 3. Analizar la historia con GPT
-    scenes = analyze_story_with_gpt(story_text, total_duration)
-    if not scenes:
+    result = analyze_story_with_gpt(story_text, total_duration)
+    if not result:
         return None
+    scenes, visual_bible = result
 
     # 4. Preparar carpeta de salida
     out_dir = SCENES_DIR / story_id
@@ -321,6 +357,7 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
                 "subreddit": subreddit,
                 "total_duration": total_duration,
                 "model": model,
+                "visual_bible": visual_bible,
                 "scenes": scenes,
             },
             f,
@@ -343,7 +380,7 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
 
         ui.info(f"Escena {n}/{len(scenes)}: [{t_start}s - {t_end}s] {beat}")
 
-        img_bytes, error_msg = generate_image(prompt, n, model=model)
+        img_bytes, error_msg = generate_image(prompt, n, model=model, visual_bible=visual_bible)
 
         # Si falla (ej: por seguridad o error 400), intentamos corregirlo con GPT-4o
         if not img_bytes and error_msg:
@@ -351,7 +388,7 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
                 new_prompt = rewrite_prompt_for_safety(prompt, error_msg)
                 if new_prompt:
                     time.sleep(2)  # Pausa corta
-                    img_bytes, error_msg = generate_image(new_prompt, n, model=model)
+                    img_bytes, error_msg = generate_image(new_prompt, n, model=model, visual_bible=visual_bible)
 
         if img_bytes:
             img_path = out_dir / f"scene_{n:02d}.png"
