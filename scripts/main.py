@@ -145,20 +145,88 @@ def main():
     else:
         orden = input(f"\n{ui.prompt_str('Orden de posts [hot/new/top] (hot): ')}").strip() or "hot"
 
-    ui.info(f"Obteniendo historias de r/{subreddit}...")
-    historias = obtener_historias(
+    ui.info(f"Obteniendo candidatos de r/{subreddit}...")
+    # Buscamos un pool más grande para permitir rechazos del usuario
+    candidatos = obtener_historias(
         subreddit,
-        limite=limite,
+        limite=max(50, limite * 10),
         min_chars=min_chars,
         max_chars=max_chars,
         orden=orden,
     )
 
-    if not historias:
+    if not candidatos:
         ui.error("No se encontraron historias con esos parámetros.")
         ui.info("Intenta ampliar la duración o cambiar el orden (hot/new/top).")
         return
 
+    from scripts.reddit import _save_used_id
+
+    historias_aceptadas = []
+    subreddit_story_dir = STORIES_DIR / subreddit
+    subreddit_story_dir.mkdir(parents=True, exist_ok=True)
+
+    for c_idx, h in enumerate(candidatos):
+        if len(historias_aceptadas) >= limite:
+            break
+
+        ui.header(f"Candidato {c_idx+1}/{len(candidatos)} (Aceptados: {len(historias_aceptadas)}/{limite})")
+        ui.info(f"Título: {h['title']}")
+        ui.info(f"Score: {h['score']} | Caracteres: {len(h['content'])}")
+        preview = h["content"][:200].replace("\n", " ")
+        ui.info(f"Preview: {preview}...")
+        print()
+
+        if args.yes:
+            opcion = "s"
+        else:
+            opcion = input(f"{ui.prompt_str('¿Deseas continuar con esta historia? [s/n/q] (s): ')}").strip().lower() or "s"
+
+        if opcion == "q":
+            ui.info("Proceso terminado por el usuario.")
+            return
+        elif opcion == "n":
+            ui.warn(f"Historia {h['id']} rechazada y marcada como usada.")
+            _save_used_id(h["id"])
+            continue
+
+        # Opción "s"
+        story_file = subreddit_story_dir / f"{subreddit}_{h['id']}.txt"
+        story_file.write_text(f"{h['title']}\n\n{h['content']}\n", encoding="utf-8")
+        
+        if not args.yes:
+            ui.success(f"Historia guardada en: {story_file}")
+            ui.info("Abre el archivo anterior, edítalo como desees y guárdalo.")
+            input(f"\n{ui.prompt_str('Presiona ENTER cuando hayas terminado de editar para continuar... ')}")
+            
+            # Recargar los cambios hechos por el usuario
+            try:
+                content_edited = story_file.read_text(encoding="utf-8")
+                lines = content_edited.splitlines()
+                if lines:
+                    h['title'] = lines[0].strip()
+                    content_lines = lines[1:]
+                    while content_lines and not content_lines[0].strip():
+                        content_lines.pop(0)
+                    h['content'] = "\n".join(content_lines).strip()
+                ui.success("Historia editada cargada correctamente.")
+            except Exception as e:
+                ui.error(f"Error al leer la edición ({e}). Se usará la versión original.")
+
+        _save_used_id(h["id"])
+        historias_aceptadas.append(h)
+
+    if len(historias_aceptadas) < limite:
+        ui.warn(f"Solo se aceptaron {len(historias_aceptadas)} de las {limite} historias solicitadas.")
+        if not historias_aceptadas:
+            ui.error("No se aceptó ninguna historia. Saliendo.")
+            return
+        if not confirm("¿Deseas continuar con las historias aceptadas?"):
+            return
+
+    historias = historias_aceptadas
+
+    # Mostrar las historias aceptadas definitivas
     mostrar_historias(historias)
 
     total_chars = sum(len(h["content"]) for h in historias)
@@ -167,6 +235,7 @@ def main():
     segundos    = int(total_segs % 60)
     ui.info(f"Duración estimada del video: {minutos}m {segundos}s")
 
+    # Guardar las historias aceptadas (y editadas) en el archivo combinado para referencia
     archivo_txt = guardar_historias(historias, subreddit)
 
     if not confirm("¿Continuar con la generación de audio (ElevenLabs)?"):
