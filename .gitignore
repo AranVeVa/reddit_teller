@@ -14,3 +14,15 @@ fonts/
 .DS_Store
 *.log
 in-out/
+
+# Local assets & utilities (not tracked)
+assets/
+utilities/
+
+# Local render scripts (not tracked)
+scripts/render_all.py
+scripts/render_existing.py
+scripts/render_story.py
+scripts/resume_pipeline.py
+scripts/resume_video.py
+scripts/run.sh
