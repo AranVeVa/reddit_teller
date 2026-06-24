@@ -3,12 +3,14 @@ import os
 from pathlib import Path
 import unicodedata
 
+_ASSETS = Path(__file__).parent.parent / "assets" / "Redditcards"
+
 # Path config
 FONT_SANS = "/usr/share/fonts/TTF/DejaVuSans.ttf"
 FONT_SANS_BOLD = "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"
 FONT_EMOJI = "/usr/share/fonts/noto/NotoColorEmoji.ttf"
-TEMPLATE_LIGHT = "/home/isael/Descargas/reddit-story.png"
-TEMPLATE_DARK = "/home/isael/Descargas/reddit-story-dark.png"
+TEMPLATE_LIGHT = str(_ASSETS / "reddit-story.png")
+TEMPLATE_DARK  = str(_ASSETS / "reddit-story-dark.png")
 
 def is_emoji(char):
     cp = ord(char)
