@@ -33,7 +33,7 @@ def text_to_audio(texto: str, nombre: str) -> Path | None:
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.8,
-            "speed": ELEVENLABS_SPEED,
+            "speed": min(1.2, max(0.7, ELEVENLABS_SPEED)),
         },
     }
 

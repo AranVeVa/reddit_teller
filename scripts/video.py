@@ -2,6 +2,8 @@ from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, 
 from moviepy.video.fx import Crop, Resize, FadeIn, FadeOut
 import math
 from pathlib import Path
+from PIL import Image as PILImage
+import numpy as np
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -89,10 +91,9 @@ def create_video(
             video = video.with_fps(12)
 
 
-        # Asignar audio
-        video = video.with_audio(audio)
-
+        # El audio se mezcla al final (narración + SFX de tarjetas)
         clips = [video]
+        card_sfx_events: list[tuple[float, str]] = []
 
         is_vertical = video.w < video.h
 
@@ -147,23 +148,35 @@ def create_video(
                     card_clip = ImageClip(str(temp_card_path)).with_duration(card_dur)
 
                     # ── Animated entry / exit ──────────────────────────────────
-                    SLIDE_IN  = 0.55   # seconds to slide in
-                    SLIDE_OUT = 0.45   # seconds to slide out
-                    card_h    = card_clip.h
-                    target_y  = y_pos
+                    SLIDE_IN     = 0.55   # seconds to slide in
+                    SLIDE_OUT    = 0.45   # seconds to slide out
+                    BOUNCE_DUR   = 0.20   # settle bounce after landing
+                    card_h       = card_clip.h
+                    BOUNCE_AMP   = max(5, int(card_h * 0.028))
+                    DIP_DUR      = 0.10   # tiny dip before exit
+                    DIP_AMP      = max(4, int(card_h * 0.018))
+                    target_y     = y_pos
                     # Slide offset: move 55% of card height upward from rest position.
-                    # Stays on-screen so MoviePy never composites a zero-height slice.
                     slide_offset = int(card_h * 0.55)
                     start_y = max(0, target_y - slide_offset)
 
-                    def _make_card_position(dur, ty, sy, sin, sout):
-                        """Factory that captures loop vars by value (avoids closure bugs)."""
+                    def _make_card_position(dur, ty, sy, sin, sout, bounce_d, bounce_a, dip_d, dip_a):
+                        """Slide in, bounce on land, dip, then slide out."""
                         def _pos(t):
+                            exit_start = dur - sout
+                            dip_start = exit_start - dip_d
+
                             if t < sin:
-                                p = 1 - (1 - t / sin) ** 3           # ease-out cubic
+                                p = 1 - (1 - t / sin) ** 3
                                 y = sy + (ty - sy) * p
-                            elif t > dur - sout:
-                                p = ((t - (dur - sout)) / sout) ** 3  # ease-in cubic
+                            elif t < sin + bounce_d:
+                                bt = (t - sin) / bounce_d
+                                y = ty + int(bounce_a * math.sin(bt * math.pi) * (1 - bt))
+                            elif t >= dip_start and t < exit_start:
+                                dt = (t - dip_start) / dip_d
+                                y = ty + int(dip_a * math.sin(dt * math.pi))
+                            elif t >= exit_start:
+                                p = ((t - exit_start) / sout) ** 2.2
                                 y = ty + (sy - ty) * p
                             else:
                                 y = ty
@@ -171,8 +184,13 @@ def create_video(
                         return _pos
 
                     card_position = _make_card_position(
-                        card_dur, target_y, start_y, SLIDE_IN, SLIDE_OUT
+                        card_dur, target_y, start_y,
+                        SLIDE_IN, SLIDE_OUT,
+                        BOUNCE_DUR, BOUNCE_AMP, DIP_DUR, DIP_AMP,
                     )
+
+                    card_sfx_events.append((t_start + SLIDE_IN, "land"))
+                    card_sfx_events.append((t_start + card_dur - SLIDE_OUT, "exit"))
 
                     # Fade accompanies slide: appears from 0→1 opacity as it descends,
                     # disappears 1→0 as it rises back up.
@@ -181,7 +199,41 @@ def create_video(
                     card_clip = card_clip.with_position(card_position).with_start(t_start)
                     clips.append(card_clip)
 
-        # If subtitles provided, parse and append text clips
+                    # ── Slothface overlay (only on the first story card) ───────
+                    if idx == 0:
+                        slothface_path = Path(__file__).parent.parent / "assets" / "Slothface.png"
+                        if slothface_path.exists():
+                            SLOTH_DUR   = 7.0   # visible duration (seconds)
+                            SLOTH_FADE  = 1.9   # fade-out duration (seconds)
+                            SLOTH_OPACITY = 0.61  # 50% transparency
+
+                            sloth_pil = PILImage.open(str(slothface_path)).convert("RGBA")
+
+                            # Scale to ~16.5% of card width (70% smaller than before)
+                            sloth_target_w = int(card_w_est * 0.24)
+                            ratio = sloth_target_w / sloth_pil.width
+                            sloth_target_h = int(sloth_pil.height * ratio)
+                            sloth_pil = sloth_pil.resize(
+                                (sloth_target_w, sloth_target_h),
+                                PILImage.Resampling.LANCZOS,
+                            )
+
+                            # Apply 50% opacity to the alpha channel
+                            r, g, b, a = sloth_pil.split()
+                            a = a.point(lambda v: int(v * SLOTH_OPACITY))
+                            sloth_pil.putalpha(a)
+
+                            sloth_arr = np.array(sloth_pil)
+                            sloth_clip = ImageClip(sloth_arr)
+                            sloth_clip = sloth_clip.with_duration(SLOTH_DUR)
+                            sloth_clip = FadeOut(SLOTH_FADE).apply(sloth_clip)
+
+                            # Center on the card at t=0 (slide-in start position)
+                            sloth_y = start_y + (card_h - sloth_target_h) // 2
+                            sloth_clip = sloth_clip.with_position(("center", sloth_y))
+                            sloth_clip = sloth_clip.with_start(t_start)
+                            clips.append(sloth_clip)
+
         if srt_path:
             subtitles = _parse_srt(srt_path)
             SUBTITLE_W = int(video.w * 0.9)
@@ -203,21 +255,12 @@ def create_video(
                 txt = txt.with_position(("center", y_top)).with_start(start).with_duration(duration)
                 clips.append(txt)
 
-            final = CompositeVideoClip(clips)
-            final = final.with_duration(video.duration)
-            final.write_videofile(
-                str(output_path),
-                codec="libx264",
-                audio_codec="aac",
-                fps=video.fps,
-                bitrate="8000k",
-                ffmpeg_params=["-crf", "20"] + (["-preset", "ultrafast"] if fast_mode else []),
-            )
+        from scripts.card_sfx import build_audio_with_card_sfx
 
-            return output_path
-
-        # No subtitles: simple write
-        video.write_videofile(
+        final = CompositeVideoClip(clips) if len(clips) > 1 else video
+        final = final.with_duration(video.duration)
+        final = final.with_audio(build_audio_with_card_sfx(audio, card_sfx_events))
+        final.write_videofile(
             str(output_path),
             codec="libx264",
             audio_codec="aac",
@@ -225,7 +268,8 @@ def create_video(
             bitrate="8000k",
             ffmpeg_params=["-crf", "20"] + (["-preset", "ultrafast"] if fast_mode else []),
         )
-        ui.success(f"Video base guardado: {output_path}")
+
+        ui.success(f"Video guardado: {output_path}")
         return output_path
 
     except FileNotFoundError as e:

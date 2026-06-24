@@ -38,11 +38,11 @@ Given the full text of a horror story, your task is to:
 1. Read and understand the complete narrative arc.
 2. Create a VISUAL BIBLE: define the world, environment, key locations, and characters that appear in the story. This visual bible will be prepended to EVERY image prompt to ensure absolute visual consistency across all scenes.
 3. Decide how many scenes are appropriate for the story duration. Use this guideline:
-   - Under 30 seconds: 2 scenes
-   - 30-60 seconds: 3 scenes
-   - 60-90 seconds: 4 scenes
-   - 90-150 seconds: 5-6 scenes
-   - Over 150 seconds: 6-8 scenes
+   - Under 30 seconds: 3 scenes
+   - 30-60 seconds: 6 scenes
+   - 60-90 seconds: 8 scenes
+   - 90-150 seconds: 10 scenes
+   - Over 150 seconds: 12 scenes
    You may adjust slightly based on narrative beats, but respect the approximate ratio.
 4. Each scene must represent a major narrative change (beginning, escalation, climax, aftermath).
 5. Provide exact second-level timing for each scene covering the full story duration with no gaps.
