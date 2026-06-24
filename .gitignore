@@ -1,19 +1,24 @@
-reddit-env/
-outputs/
-__pycache__/
-scripts/__pycache__/
+# Python
 *.pyc
 *.pyo
 *.pyd
-background_videos/
-background_audio/
-stories/
-fonts/
+**/__pycache__/
+
+# Virtual environment
+reddit-env/
+
+# Credentials & config
 .env
 .env.*
-.DS_Store
-*.log
-in-out/
+
+# Generated outputs
+outputs/
+
+# Large local media
+background_videos/
+background_audio/
+fonts/
+stories/
 
 # Local assets & utilities (not tracked)
 assets/
@@ -26,3 +31,7 @@ scripts/render_story.py
 scripts/resume_pipeline.py
 scripts/resume_video.py
 scripts/run.sh
+
+# OS
+.DS_Store
+*.log
