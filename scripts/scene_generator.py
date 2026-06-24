@@ -39,10 +39,10 @@ Given the full text of a horror story, your task is to:
 2. Create a VISUAL BIBLE: define the world, environment, key locations, and characters that appear in the story. This visual bible will be prepended to EVERY image prompt to ensure absolute visual consistency across all scenes.
 3. Decide how many scenes are appropriate for the story duration. Use this guideline:
    - Under 30 seconds: 3 scenes
-   - 30-60 seconds: 6 scenes
-   - 60-90 seconds: 8 scenes
-   - 90-150 seconds: 10 scenes
-   - Over 150 seconds: 12 scenes
+   - 30-60 seconds: 4-5 scenes
+   - 60-90 seconds: 5-6 scenes
+   - 90-150 seconds: 7-8 scenes
+   - Over 150 seconds: 9-10 scenes
    You may adjust slightly based on narrative beats, but respect the approximate ratio.
 4. Each scene must represent a major narrative change (beginning, escalation, climax, aftermath).
 5. Provide exact second-level timing for each scene covering the full story duration with no gaps.
@@ -131,15 +131,15 @@ def analyze_story_with_gpt(story_text: str, total_duration: float) -> tuple[list
 
     # Calcular escenas sugeridas basado en la duración
     if total_duration < 30:
-        suggested = 2
-    elif total_duration < 60:
         suggested = 3
-    elif total_duration < 90:
+    elif total_duration < 60:
         suggested = 4
-    elif total_duration < 150:
+    elif total_duration < 90:
         suggested = 5
+    elif total_duration < 150:
+        suggested = 7
     else:
-        suggested = min(8, max(6, int(total_duration / 25)))
+        suggested = min(10, max(8, int(total_duration / 20)))
 
     ui.info(f"Duración: {int(total_duration)}s → sugiriendo ~{suggested} escenas")
     
