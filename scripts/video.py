@@ -1,4 +1,4 @@
-from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, ImageClip
+from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, ImageClip, concatenate_videoclips
 from moviepy.video.fx import Crop, Resize, FadeIn, FadeOut
 import math
 from pathlib import Path
@@ -260,6 +260,18 @@ def create_video(
         final = CompositeVideoClip(clips) if len(clips) > 1 else video
         final = final.with_duration(video.duration)
         final = final.with_audio(build_audio_with_card_sfx(audio, card_sfx_events))
+
+        # ── Intro prepend (horizontal only) ───────────────────────────────
+        INTRO_FADE = 0.4  # seconds for fade-out on intro / fade-in on main
+        intro_path = Path(__file__).parent.parent / "assets" / "intro.mp4"
+        if not is_vertical and intro_path.exists():
+            ui.info("Prepending intro.mp4...")
+            intro_clip = VideoFileClip(str(intro_path))
+            intro_clip = _crop_to_vertical(intro_clip)  # match dimensions
+            intro_clip = FadeOut(INTRO_FADE).apply(intro_clip)
+            final      = FadeIn(INTRO_FADE).apply(final)
+            final      = concatenate_videoclips([intro_clip, final])
+
         final.write_videofile(
             str(output_path),
             codec="libx264",
