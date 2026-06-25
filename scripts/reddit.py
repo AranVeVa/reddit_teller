@@ -17,11 +17,31 @@ USED_IDS_FILE = STORIES_DIR / "used_ids.txt"
 def _load_used_ids() -> set:
     if not USED_IDS_FILE.exists():
         return set()
-    return set(USED_IDS_FILE.read_text(encoding="utf-8").splitlines())
+    used = set()
+    for line in USED_IDS_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if "ID: " in line:
+            parts = line.split("ID: ")
+            if len(parts) > 1:
+                post_id = parts[1].split(" | ")[0].strip()
+                used.add(post_id)
+        else:
+            used.add(line)
+    return used
 
-def _save_used_id(post_id: str):
+def _save_used_id(post_id: str, title: str = "", subreddit: str = "", is_vertical: bool = True):
+    if title and subreddit:
+        title_clean = title.replace("\n", " ")
+        if is_vertical:
+            line = f"ID: {post_id} | Title: {title_clean} | Subreddit: r/{subreddit}\n"
+        else:
+            line = f"r/{subreddit} | ID: {post_id} | Title: {title_clean} | Subreddit: r/{subreddit}\n"
+    else:
+        line = f"{post_id}\n"
     with open(USED_IDS_FILE, "a", encoding="utf-8") as f:
-        f.write(post_id + "\n")
+        f.write(line)
 
 def _get_reddit():
     return praw.Reddit(
@@ -98,7 +118,7 @@ def obtener_historias(
     return historias
 
 
-def guardar_historias(historias: list[dict], subreddit: str) -> Path:
+def guardar_historias(historias: list[dict], subreddit: str, is_vertical: bool = True) -> Path:
     if not historias:
         ui.warn("No se encontraron historias que cumplan los filtros.")
         return None
@@ -117,7 +137,7 @@ def guardar_historias(historias: list[dict], subreddit: str) -> Path:
                 f"{h['content']}\n"
                 f"{'—' * 40}\n\n"
             )
-            _save_used_id(h["id"])
+            _save_used_id(h["id"], title=h["title"], subreddit=subreddit, is_vertical=is_vertical)
     
     ui.success(f"{len(historias)} historias guardadas en {archivo}")
     return archivo

@@ -187,7 +187,8 @@ def main():
             return
         elif opcion == "n":
             ui.warn(f"Historia {h['id']} rechazada y marcada como usada.")
-            _save_used_id(h["id"])
+            is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
+            _save_used_id(h["id"], title=h["title"], subreddit=subreddit, is_vertical=is_vertical)
             continue
 
         # Opción "s"
@@ -213,7 +214,8 @@ def main():
             except Exception as e:
                 ui.error(f"Error al leer la edición ({e}). Se usará la versión original.")
 
-        _save_used_id(h["id"])
+        is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
+        _save_used_id(h["id"], title=h["title"], subreddit=subreddit, is_vertical=is_vertical)
         historias_aceptadas.append(h)
 
     if len(historias_aceptadas) < limite:
@@ -236,7 +238,8 @@ def main():
     ui.info(f"Duración estimada del video: {minutos}m {segundos}s")
 
     # Guardar las historias aceptadas (y editadas) en el archivo combinado para referencia
-    archivo_txt = guardar_historias(historias, subreddit)
+    is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
+    archivo_txt = guardar_historias(historias, subreddit, is_vertical=is_vertical)
 
     if not confirm("¿Continuar con la generación de audio (ElevenLabs)?"):
         ui.info("Proceso terminado.")
