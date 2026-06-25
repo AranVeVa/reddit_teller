@@ -108,6 +108,22 @@ def find_audio(story_id: str, subreddit: str) -> Path | None:
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
+def _find_scenes_dir(story_id: str) -> Path | None:
+    """Busca scenes/<subreddit>/<story_id>/ recorriendo los subdirectorios de SCENES_DIR."""
+    # New structure: scenes/<subreddit>/<story_id>/
+    for sub_dir in SCENES_DIR.iterdir():
+        if not sub_dir.is_dir():
+            continue
+        candidate = sub_dir / story_id
+        if (candidate / "scenes.json").exists():
+            return candidate
+    # Fallback: old flat structure scenes/<story_id>/
+    flat = SCENES_DIR / story_id
+    if (flat / "scenes.json").exists():
+        return flat
+    return None
+
+
 def build_scene_clip(story_id: str) -> "CompositeVideoClip | None":
     """
     Construye y devuelve el clip compuesto de escenas (sin audio, sin render).
@@ -115,13 +131,12 @@ def build_scene_clip(story_id: str) -> "CompositeVideoClip | None":
     Las transiciones dissolve (FadeIn) se solapan hacia atrás para que el inicio
     de cada escena coincida exactamente con su marca de tiempo en la narración.
     """
-    scenes_dir  = SCENES_DIR / story_id
-    scenes_json = scenes_dir / "scenes.json"
-
-    if not scenes_json.exists():
-        ui.error(f"No se encontró scenes.json en {scenes_dir}")
+    scenes_dir = _find_scenes_dir(story_id)
+    if scenes_dir is None:
+        ui.error(f"No se encontró scenes.json para '{story_id}' en {SCENES_DIR}")
         ui.info(f"Ejecuta primero: python scripts/scene_generator.py {story_id}")
         return None
+    scenes_json = scenes_dir / "scenes.json"
 
     with open(scenes_json, encoding="utf-8") as f:
         plan = json.load(f)
@@ -190,11 +205,11 @@ def generate_scene_video(story_id: str) -> Path | None:
     Uso standalone: construye el clip de escenas, le agrega el audio
     mezclado y lo renderiza a un archivo mp4.
     """
-    scenes_dir  = SCENES_DIR / story_id
-    scenes_json = scenes_dir / "scenes.json"
-    if not scenes_json.exists():
-        ui.error(f"No se encontró scenes.json en {scenes_dir}")
+    scenes_dir = _find_scenes_dir(story_id)
+    if scenes_dir is None:
+        ui.error(f"No se encontró scenes.json para '{story_id}' en {SCENES_DIR}")
         return None
+    scenes_json = scenes_dir / "scenes.json"
     with open(scenes_json, encoding="utf-8") as f:
         plan = json.load(f)
     subreddit = plan["subreddit"]

@@ -344,8 +344,8 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
         return None
     scenes, visual_bible = result
 
-    # 4. Preparar carpeta de salida
-    out_dir = SCENES_DIR / story_id
+    # 4. Preparar carpeta de salida: scenes/<subreddit>/<story_id>/
+    out_dir = SCENES_DIR / subreddit / story_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 5. Guardar el plan de escenas como JSON
