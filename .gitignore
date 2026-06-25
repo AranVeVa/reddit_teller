@@ -19,6 +19,7 @@ background_videos/
 background_audio/
 fonts/
 stories/
+scenes/
 
 # Local assets & utilities (not tracked)
 assets/

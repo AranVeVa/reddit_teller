@@ -32,7 +32,7 @@ AUDIOS_DIR      = OUTPUTS_DIR / "audios"
 MIXED_DIR       = OUTPUTS_DIR / "mixed"
 SUBS_DIR        = OUTPUTS_DIR / "subs"
 VIDEOS_DIR      = OUTPUTS_DIR / "videos"
-SCENES_DIR      = OUTPUTS_DIR / "scenes"
+SCENES_DIR      = ROOT / "scenes"
 STORIES_DIR   = ROOT / "stories"
 
 for _dir in [AUDIOS_DIR, MIXED_DIR, SUBS_DIR, VIDEOS_DIR, SCENES_DIR, STORIES_DIR]:
