@@ -173,8 +173,8 @@ def main():
         ui.header(f"Candidato {c_idx+1}/{len(candidatos)} (Aceptados: {len(historias_aceptadas)}/{limite})")
         ui.info(f"Título: {h['title']}")
         ui.info(f"Score: {h['score']} | Caracteres: {len(h['content'])}")
-        preview = h["content"][:200].replace("\n", " ")
-        ui.info(f"Preview: {preview}...")
+        preview = h["content"]
+        ui.info(f"Preview:\n{preview}")
         print()
 
         if args.yes:

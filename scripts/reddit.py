@@ -124,6 +124,6 @@ def guardar_historias(historias: list[dict], subreddit: str) -> Path:
 
 def mostrar_historias(historias: list[dict]):
     for i, h in enumerate(historias, 1):
-        preview = h["content"][:120].replace("\n", " ")
         ui.info(f"[{i}] {h['title']} (score: {h['score']})")
-        ui.info(f"    {preview}...")
+        preview = h["content"]
+        ui.info(f"Content:\n{preview}")
