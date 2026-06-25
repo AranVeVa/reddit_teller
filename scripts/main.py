@@ -214,8 +214,6 @@ def main():
             except Exception as e:
                 ui.error(f"Error al leer la edición ({e}). Se usará la versión original.")
 
-        is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
-        _save_used_id(h["id"], title=h["title"], subreddit=subreddit, is_vertical=is_vertical)
         historias_aceptadas.append(h)
 
     if len(historias_aceptadas) < limite:
