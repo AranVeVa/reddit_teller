@@ -259,6 +259,7 @@ def create_video(
 
         final = CompositeVideoClip(clips) if len(clips) > 1 else video
         final = final.with_duration(video.duration)
+        final = FadeOut(3.0).apply(final)
         final = final.with_audio(build_audio_with_card_sfx(audio, card_sfx_events))
 
         # ── Intro prepend (horizontal only) ───────────────────────────────
