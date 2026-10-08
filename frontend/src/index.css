@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f8fafc;
+  /* Modo claro: Fondo Gris Muy Claro */
+  color: #0f172a;
+  /* Modo claro: Texto Oscuro */
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html.dark body {
+  background-color: #020617;
+  /* Modo oscuro: Fondo Negro Slate */
+  color: #f8fafc;
+  /* Modo oscuro: Texto Blanco */
+}
+
+
+/* Barra de Navegación */
+.ui-navbar {
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+html.dark .ui-navbar {
+  background-color: #0f172a;
+  border-bottom-color: #1e293b;
+}
+
+/* Textos e Íconos del Navbar */
+.ui-nav-text {
+  color: #0f172a;
+}
+
+html.dark .ui-nav-text {
+  color: #f8fafc;
+}
+
+.ui-nav-text-muted {
+  color: #475569;
+}
+
+html.dark .ui-nav-text-muted {
+  color: #cbd5e1;
+}
+
+/* Badge IA (Píldora "Automatización con IA") */
+.ui-badge-ai {
+  background-color: #e0e7ff;
+  border: 1px solid #c7d2fe;
+  color: #312e81;
+}
+
+html.dark .ui-badge-ai {
+  background-color: #1e1b4b;
+  border-color: #3730a3;
+  color: #c7d2fe;
+}
+
+/* Tarjetas (Galerías de videos, Contenedor de Crear Video, etc.) */
+.ui-card {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+html.dark .ui-card {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+}
+
+/* Títulos y Subtítulos dentro de Tarjetas */
+.ui-text-title {
+  color: #0f172a !important;
+}
+
+html.dark .ui-text-title {
+  color: #f8fafc !important;
+}
+
+.ui-text-sub {
+  color: #475569 !important;
+}
+
+html.dark .ui-text-sub {
+  color: #94a3b8 !important;
+}
+
+/* Modales (Login / Register) */
+.ui-modal-overlay {
+  background-color: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.ui-modal-box {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.dark .ui-modal-box {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+/* Campos de entrada (Inputs y Selects) */
+.ui-input {
+  background-color: #f8fafc !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.ui-input:focus {
+  border-color: #4f46e5 !important;
+  background-color: #ffffff !important;
+  outline: none;
+}
+
+html.dark .ui-input {
+  background-color: #020617 !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+/* Botón Principal (Morado / Indigo) - Texto siempre blanco e hiper-legible */
+.ui-btn-primary {
+  background-color: #4f46e5 !important;
+  color: #ffffff !important;
+}
+
+.ui-btn-primary:hover {
+  background-color: #4338ca !important;
+}
+
+/* Botón Secundario (Gris / Neutral) */
+.ui-btn-secondary {
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+.ui-btn-secondary:hover {
+  background-color: #e2e8f0;
+}
+
+html.dark .ui-btn-secondary {
+  background-color: #1e293b;
+  border-color: #334155;
+  color: #f8fafc;
+}
+
+html.dark .ui-btn-secondary:hover {
+  background-color: #334155;
+}
