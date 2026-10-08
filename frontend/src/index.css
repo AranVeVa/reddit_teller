@@ -1,171 +1,218 @@
 @import "tailwindcss";
 
-@variant dark (&:where(.dark, .dark *));
+@layer base {
+  :root {
+    --bg-dark: #0E0D0F;
+    --surface-1: #17151A;
+    --surface-2: #211E24;
+    --surface-3: #2B272F;
+    --border-subtle: #2E2A31;
+    --border-strong: #45404A;
+    --text-main: #ECE7E1;
+    --text-muted: #A39C96;
+    --text-dim: #6E6760;
+    --accent-red: #E5484D;
+    --accent-red-hover: #B3261E;
+    --accent-red-fill: #9F1D20;
+    --accent-amber: #D4A24C;
+    --accent-green: #6FA36B;
+    --accent-blue: #7FA7C9;
+  }
 
-:root {
-  color-scheme: light dark;
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Focus visible accessibility ring */
+  *:focus-visible {
+    outline: 2px solid var(--accent-red) !important;
+    outline-offset: 2px !important;
+  }
 }
 
-* {
-  box-sizing: border-box;
+/* Typography styles */
+.font-display {
+  font-family: 'Big Shoulders Display', 'Impact', sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: #f8fafc;
-  /* Modo claro: Fondo Gris Muy Claro */
-  color: #0f172a;
-  /* Modo claro: Texto Oscuro */
-  transition: background-color 0.2s ease, color 0.2s ease;
+.font-mono {
+  font-family: 'Geist Mono', 'Fira Code', monospace;
 }
 
-html.dark body {
-  background-color: #020617;
-  /* Modo oscuro: Fondo Negro Slate */
-  color: #f8fafc;
-  /* Modo oscuro: Texto Blanco */
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-
-/* Barra de Navegación */
-.ui-navbar {
-  background-color: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+::-webkit-scrollbar-track {
+  background: var(--bg-dark);
 }
 
-html.dark .ui-navbar {
-  background-color: #0f172a;
-  border-bottom-color: #1e293b;
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
 }
 
-/* Textos e Íconos del Navbar */
-.ui-nav-text {
-  color: #0f172a;
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-red);
 }
 
-html.dark .ui-nav-text {
-  color: #f8fafc;
+/* Micro-animations */
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.ui-nav-text-muted {
-  color: #475569;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-html.dark .ui-nav-text-muted {
-  color: #cbd5e1;
+.animate-draw-circle {
+  stroke-dasharray: 166;
+  stroke-dashoffset: 166;
+  animation: strokeDraw 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
 }
 
-/* Badge IA (Píldora "Automatización con IA") */
-.ui-badge-ai {
-  background-color: #e0e7ff;
-  border: 1px solid #c7d2fe;
-  color: #312e81;
+.animate-draw-check {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: strokeDraw 0.4s cubic-bezier(0.65, 0, 0.45, 1) 0.3s forwards;
 }
 
-html.dark .ui-badge-ai {
-  background-color: #1e1b4b;
-  border-color: #3730a3;
-  color: #c7d2fe;
+@keyframes strokeDraw {
+  100% {
+    stroke-dashoffset: 0;
+  }
 }
 
-/* Tarjetas (Galerías de videos, Contenedor de Crear Video, etc.) */
-.ui-card {
-  background-color: #ffffff !important;
-  border: 1px solid #cbd5e1 !important;
-  color: #0f172a !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+/* ─── Step Content Slide Transitions ─── */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
-html.dark .ui-card {
-  background-color: #0f172a !important;
-  border-color: #1e293b !important;
-  color: #f8fafc !important;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
-/* Títulos y Subtítulos dentro de Tarjetas */
-.ui-text-title {
-  color: #0f172a !important;
+.animate-slide-in-right {
+  animation: slideInRight 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-html.dark .ui-text-title {
-  color: #f8fafc !important;
+.animate-slide-in-left {
+  animation: slideInLeft 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.ui-text-sub {
-  color: #475569 !important;
+/* ─── View Tab Transition (Cross-fade between main views) ─── */
+@keyframes viewFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
-html.dark .ui-text-sub {
-  color: #94a3b8 !important;
+.animate-view-enter {
+  animation: viewFadeIn 280ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Modales (Login / Register) */
-.ui-modal-overlay {
-  background-color: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(4px);
+/* ─── Glass Panel Utility ─── */
+.glass-panel {
+  background-color: rgba(23, 21, 26, 0.8);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
 }
 
-.ui-modal-box {
-  background-color: #ffffff !important;
-  border: 1px solid #cbd5e1 !important;
-  color: #0f172a !important;
+/* ─── Terminal Smooth Open/Close ─── */
+@keyframes terminalOpen {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-html.dark .ui-modal-box {
-  background-color: #0f172a !important;
-  border-color: #1e293b !important;
-  color: #f8fafc !important;
+@keyframes terminalClose {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
 }
 
-/* Campos de entrada (Inputs y Selects) */
-.ui-input {
-  background-color: #f8fafc !important;
-  border: 1px solid #cbd5e1 !important;
-  color: #0f172a !important;
+.animate-terminal-open {
+  animation: terminalOpen 280ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.ui-input:focus {
-  border-color: #4f46e5 !important;
-  background-color: #ffffff !important;
-  outline: none;
+/* ─── Subtle Scale Hover for Cards ─── */
+.hover-lift {
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 200ms ease;
 }
 
-html.dark .ui-input {
-  background-color: #020617 !important;
-  border-color: #1e293b !important;
-  color: #f8fafc !important;
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -4px rgba(0, 0, 0, 0.4);
 }
 
-/* Botón Principal (Morado / Indigo) - Texto siempre blanco e hiper-legible */
-.ui-btn-primary {
-  background-color: #4f46e5 !important;
-  color: #ffffff !important;
+/* ─── Micro Pulse for Active Indicators ─── */
+@keyframes gentlePulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
-.ui-btn-primary:hover {
-  background-color: #4338ca !important;
+.animate-gentle-pulse {
+  animation: gentlePulse 2s ease-in-out infinite;
 }
 
-/* Botón Secundario (Gris / Neutral) */
-.ui-btn-secondary {
-  background-color: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  color: #0f172a;
-}
-
-.ui-btn-secondary:hover {
-  background-color: #e2e8f0;
-}
-
-html.dark .ui-btn-secondary {
-  background-color: #1e293b;
-  border-color: #334155;
-  color: #f8fafc;
-}
-
-html.dark .ui-btn-secondary:hover {
-  background-color: #334155;
+/* ─── Prefers Reduced Motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

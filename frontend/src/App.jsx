@@ -1,62 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
-import AuthModal from './components/AuthModal';
-import Footer from './components/Footer';
-import Home from './pages/Home';
-import CreateVideo from './pages/CreateVideo';
-import VideoResult from './pages/VideoResult';
+import React, { useState, useRef } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import Navbar from "./components/Navbar";
+import StudioPage from "./pages/studio/StudioPage";
+import LibraryPage from "./pages/LibraryPage";
+import SettingsPage from "./pages/settings/SettingsPage";
+
+const viewComponents = {
+  studio: StudioPage,
+  library: LibraryPage,
+  settings: SettingsPage,
+};
 
 export default function App() {
-  const [currentView, setCurrentView] = useState('home');
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [generatedVideo, setGeneratedVideo] = useState(null);
-  const [authModal, setAuthModal] = useState({ isOpen: false, mode: 'login' });
+  const [currentTab, setCurrentTab] = useState("studio");
+  const prevTabRef = useRef("studio");
 
-  useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
-
-  const handleOpenAuth = (mode) => {
-    setAuthModal({ isOpen: true, mode });
+  const handleTabChange = (newTab) => {
+    prevTabRef.current = currentTab;
+    setCurrentTab(newTab);
   };
 
+  const ActiveView = viewComponents[currentTab];
+
   return (
-    <div className={`min-h-screen flex flex-col font-sans theme-transition ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
-      }`}>
+    <div
+      className="min-h-screen flex flex-col overflow-x-hidden"
+      style={{ backgroundColor: "#0E0D0F", color: "#ECE7E1" }}
+    >
+      <Navbar currentTab={currentTab} setCurrentTab={handleTabChange} />
 
-      <Navbar
-        currentView={currentView}
-        setCurrentView={setCurrentView}
-        isDarkMode={isDarkMode}
-        setIsDarkMode={setIsDarkMode}
-        onOpenAuth={handleOpenAuth}
-      />
-
-      <main className="flex-1">
-        {currentView === 'home' && (
-          <Home onNavigateCreate={() => setCurrentView('create')} />
-        )}
-
-        {currentView === 'create' && (
-          <CreateVideo onGenerated={(data) => { setGeneratedVideo(data); setCurrentView('result'); }} />
-        )}
-
-        {currentView === 'result' && (
-          <VideoResult resultData={generatedVideo} onReset={() => setCurrentView('create')} />
-        )}
-      </main>
-
-      <AuthModal
-        isOpen={authModal.isOpen}
-        initialMode={authModal.mode}
-        onClose={() => setAuthModal({ ...authModal, isOpen: false })}
-      />
-
-      <Footer />
+      <div className="flex-1 relative overflow-hidden">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentTab}
+            initial={{ opacity: 0, scale: 0.985 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.985 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="h-full"
+            style={{ backgroundColor: "#0E0D0F" }}
+          >
+            <ActiveView />
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
