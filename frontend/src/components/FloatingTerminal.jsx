@@ -4,8 +4,56 @@ import { Terminal, Maximize2, Minimize2, Activity } from "lucide-react";
 
 export default function FloatingTerminal({ events = [], isRunning = false }) {
   const [mode, setMode] = useState("compact"); // "compact", "open", "expanded"
+  const [corner, setCorner] = useState("bottom-right"); // "top-left", "top-right", "bottom-left", "bottom-right"
   const [allLogs, setAllLogs] = useState([]);
   const logsEndRef = useRef(null);
+  const isDraggingRef = useRef(false);
+
+  const isExpanded = mode === "expanded";
+
+  const cornerPositions = {
+    "top-left": "top-20 left-6",
+    "top-right": "top-20 right-6",
+    "bottom-left": "bottom-6 left-6",
+    "bottom-right": "bottom-6 right-6",
+  };
+
+  const windowPositions = {
+    "top-left": isExpanded ? "top-20 left-6 right-6 bottom-6" : "top-20 left-6 w-[540px] max-w-[calc(100vw-3rem)] h-64",
+    "top-right": isExpanded ? "top-20 left-6 right-6 bottom-6" : "top-20 right-6 w-[540px] max-w-[calc(100vw-3rem)] h-64",
+    "bottom-left": isExpanded ? "top-20 left-6 right-6 bottom-6" : "bottom-6 left-6 w-[540px] max-w-[calc(100vw-3rem)] h-64",
+    "bottom-right": isExpanded ? "top-20 left-6 right-6 bottom-6" : "bottom-6 right-6 w-[540px] max-w-[calc(100vw-3rem)] h-64",
+  };
+
+  const handleDragStart = () => {
+    isDraggingRef.current = true;
+  };
+
+  const handleDragEnd = (e, info) => {
+    const midX = window.innerWidth / 2;
+    const midY = window.innerHeight / 2;
+    const dropX = info.point.x;
+    const dropY = info.point.y;
+
+    if (dropX < midX && dropY < midY) {
+      setCorner("top-left");
+    } else if (dropX >= midX && dropY < midY) {
+      setCorner("top-right");
+    } else if (dropX < midX && dropY >= midY) {
+      setCorner("bottom-left");
+    } else {
+      setCorner("bottom-right");
+    }
+
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 100);
+  };
+
+  const handlePillClick = () => {
+    if (isDraggingRef.current) return;
+    setMode("open");
+  };
 
   // Append new events to session logs without wiping previous history
   useEffect(() => {
@@ -60,29 +108,33 @@ export default function FloatingTerminal({ events = [], isRunning = false }) {
     );
   };
 
-  const isExpanded = mode === "expanded";
-
   return (
     <>
-      {/* Compact Pill (always present as exit target for AnimatePresence) */}
+      {/* Draggable Compact Pill with 4-Corner Snap & Bouncing Spring */}
       <AnimatePresence mode="wait">
         {mode === "compact" && (
           <motion.div
-            key="compact-pill"
-            initial={{ opacity: 0, y: 16, scale: 0.92 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.92 }}
-            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed bottom-5 right-6 z-50"
+            key={`compact-pill-${corner}`}
+            drag
+            dragMomentum={false}
+            dragElastic={0.1}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            initial={{ scale: 0.85, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.85, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 420, damping: 22, mass: 0.8 }}
+            className={`fixed ${cornerPositions[corner]} z-50 cursor-grab active:cursor-grabbing select-none`}
           >
             <button
               type="button"
-              onClick={() => setMode("open")}
-              className="flex items-center gap-2 px-4 py-2 bg-[#141217] border border-[#2A262E] hover:border-[#E5484D] rounded-full shadow-2xl text-xs font-mono text-[#ECE7E1] cursor-pointer transition-colors duration-200 hover:scale-105 active:scale-95 group focus:outline-none"
+              onClick={handlePillClick}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#141217] border border-[#2A262E] hover:border-[#E5484D] rounded-xl shadow-2xl text-xs font-mono text-[#ECE7E1] transition-transform hover:scale-105 active:scale-95 group focus:outline-none"
               style={{ backgroundColor: "#141217" }}
+              title="Arrastra para posicionar en cualquiera de las 4 esquinas"
             >
-              <Terminal className="w-4 h-4 text-[#E5484D] group-hover:rotate-12 transition-transform duration-300" />
-              <span className="font-bold tracking-widest text-xs">LOGS</span>
+              <Terminal className="w-3.5 h-3.5 text-[#E5484D] group-hover:rotate-12 transition-transform duration-300" />
+              <span className="font-bold tracking-widest text-xs">&gt; LOGS</span>
               {isRunning && (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping ml-1" />
               )}
@@ -91,20 +143,16 @@ export default function FloatingTerminal({ events = [], isRunning = false }) {
         )}
       </AnimatePresence>
 
-      {/* Open/Expanded Terminal Window */}
+      {/* Open/Expanded Terminal Window — Opens from Active Corner */}
       <AnimatePresence mode="wait">
         {mode !== "compact" && (
           <motion.div
             key="terminal-window"
-            initial={{ opacity: 0, y: 20, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.94 }}
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.92 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className={`fixed z-50 shadow-2xl border rounded-2xl overflow-hidden flex flex-col border-[#2A262E] ${
-              isExpanded
-                ? "bottom-6 right-6 left-6 top-20 md:left-32 md:right-8 md:bottom-8"
-                : "bottom-5 right-6 w-[540px] max-w-[calc(100vw-3rem)] h-64"
-            }`}
+            className={`fixed z-50 shadow-2xl border rounded-2xl overflow-hidden flex flex-col border-[#2A262E] transition-all duration-300 ${windowPositions[corner]}`}
             style={{ backgroundColor: "#080709" }}
           >
             {/* Header Bar */}
