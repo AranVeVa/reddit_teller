@@ -39,10 +39,10 @@ export default function EditStep({ project, onRunStep, loading, onUpdateProject 
   };
 
   return (
-    <div className="space-y-6 max-w-4xl animate-fade-in">
+    <div className="space-y-6 w-full max-w-5xl mx-auto animate-fade-in">
       <div className="flex items-center justify-between border-b border-[#2A262E] pb-4">
         <div>
-          <h2 className="text-lg font-bold font-display text-[#ECE7E1] uppercase tracking-wide">
+          <h2 className="text-2xl font-black font-display text-[#ECE7E1] uppercase tracking-wider">
             3. Edición & Pulido del Texto
           </h2>
           <p className="text-xs text-[#8E8780] mt-1">

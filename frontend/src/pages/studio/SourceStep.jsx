@@ -34,9 +34,9 @@ export default function SourceStep({ project, onRunStep, loading }) {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 w-full max-w-4xl mx-auto">
       <div>
-        <h2 className="text-lg font-bold font-display text-[#ECE7E1] uppercase tracking-wide">
+        <h2 className="text-2xl font-black font-display text-[#ECE7E1] uppercase tracking-wider">
           1. Selección de Fuente & Parámetros
         </h2>
         <p className="text-xs text-[#A39C96] mt-1">

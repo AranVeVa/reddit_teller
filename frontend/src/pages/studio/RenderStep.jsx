@@ -31,9 +31,9 @@ export default function RenderStep({ project, onRunStep, loading, events = [], o
   const percent = lastProgressEvt ? lastProgressEvt.percent : loading ? 50 : videoDone ? 100 : 0;
 
   return (
-    <div className="space-y-6 max-w-3xl animate-fade-in">
+    <div className="space-y-6 w-full max-w-5xl mx-auto animate-fade-in">
       <div>
-        <h2 className="text-lg font-bold font-display text-[#ECE7E1] uppercase tracking-wide">
+        <h2 className="text-2xl font-black font-display text-[#ECE7E1] uppercase tracking-wider">
           7. Renderizado Final del Video MP4
         </h2>
         <p className="text-xs text-[#8E8780] mt-1">
