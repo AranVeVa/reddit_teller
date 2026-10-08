@@ -360,66 +360,67 @@ def rewrite_prompt_for_safety(original_prompt: str, error_message: str) -> str |
     return None
 
 
-def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
-    """
-    Orquesta todo el proceso:
-    1. Busca el .srt del story_id
-    2. Analiza la historia con GPT
-    3. Genera una imagen por escena
-    4. Guarda todo en outputs/scenes/<story_id>/
-
-    Devuelve la carpeta de salida si tuvo éxito.
-    """
+def plan_scenes(story_id: str, model: str = "gpt-image-1") -> dict | None:
+    """Analiza la historia y guarda scenes.json sin generar aún las imágenes."""
     if not OPENAI_API_KEY:
         ui.error("OPENAI_API_KEY no encontrada en el .env")
         return None
 
-    # 1. Encontrar el subreddit y el .srt
-    ui.info(f"Buscando archivos para story_id: {story_id}...")
     subreddit = find_subreddit_for_id(story_id)
     if not subreddit:
         ui.error(f"No se encontró .srt para el id '{story_id}' en {SUBS_DIR}")
         return None
 
     srt_path = SUBS_DIR / subreddit / f"{subreddit}_{story_id}.srt"
-    ui.success(f"SRT: {srt_path}")
-
-    # 2. Parsear el SRT
     story_text, total_duration = parse_srt_to_text(srt_path)
-    ui.info(f"Duración total: {total_duration:.1f}s | Caracteres: {len(story_text)}")
 
-    # 3. Analizar la historia con GPT
     result = analyze_story_with_gpt(story_text, total_duration)
     if not result:
         return None
     scenes, visual_bible = result
 
-    # 4. Preparar carpeta de salida: scenes/<subreddit>/<story_id>/
     out_dir = SCENES_DIR / subreddit / story_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 5. Guardar el plan de escenas como JSON
+    plan_data = {
+        "story_id": story_id,
+        "subreddit": subreddit,
+        "total_duration": total_duration,
+        "model": model,
+        "visual_bible": visual_bible,
+        "scenes": scenes,
+    }
+
     scenes_json_path = out_dir / "scenes.json"
     with open(scenes_json_path, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "story_id": story_id,
-                "subreddit": subreddit,
-                "total_duration": total_duration,
-                "model": model,
-                "visual_bible": visual_bible,
-                "scenes": scenes,
-            },
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
-    ui.success(f"Plan guardado: {scenes_json_path}")
+        json.dump(plan_data, f, indent=2, ensure_ascii=False)
 
-    # 6. Generar imágenes escena por escena
+    ui.success(f"Plan de escenas generado y guardado en: {scenes_json_path}")
+    return plan_data
+
+
+def render_scene_images(story_id: str, model: str = "gpt-image-1") -> Path | None:
+    """Genera las imágenes PNG descritas en scenes.json."""
+    subreddit = find_subreddit_for_id(story_id)
+    if not subreddit:
+        ui.error(f"No se encontró carpeta de escenas para el id '{story_id}'")
+        return None
+
+    out_dir = SCENES_DIR / subreddit / story_id
+    scenes_json_path = out_dir / "scenes.json"
+    if not scenes_json_path.exists():
+        ui.info(f"Plan no encontrado. Creando plan primero...")
+        plan_data = plan_scenes(story_id, model=model)
+        if not plan_data:
+            return None
+    else:
+        with open(scenes_json_path, "r", encoding="utf-8") as f:
+            plan_data = json.load(f)
+
+    scenes = plan_data.get("scenes", [])
+    visual_bible = plan_data.get("visual_bible", "")
+
     ui.info(f"\nGenerando {len(scenes)} imágenes con {model}...")
-    print()
-
     failed = []
     for scene in scenes:
         n = scene["scene_number"]
@@ -429,15 +430,13 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
         beat = scene.get("narrative_beat", "")
 
         ui.info(f"Escena {n}/{len(scenes)}: [{t_start}s - {t_end}s] {beat}")
-
         img_bytes, error_msg = generate_image(prompt, n, model=model, visual_bible=visual_bible)
 
-        # Si falla (ej: por seguridad o error 400), intentamos corregirlo con GPT-4o
         if not img_bytes and error_msg:
-            if "safety" in error_msg.lower() or "policy" in error_msg.lower() or "rejected" in error_msg.lower() or "violation" in error_msg.lower():
+            if any(k in error_msg.lower() for k in ["safety", "policy", "rejected", "violation"]):
                 new_prompt = rewrite_prompt_for_safety(prompt, error_msg)
                 if new_prompt:
-                    time.sleep(2)  # Pausa corta
+                    time.sleep(2)
                     img_bytes, error_msg = generate_image(new_prompt, n, model=model, visual_bible=visual_bible)
 
         if img_bytes:
@@ -445,41 +444,80 @@ def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
             img_path.write_bytes(img_bytes)
             ui.success(f"  Guardada: {img_path.name} ({len(img_bytes) // 1024} KB)")
         else:
-            ui.warn(f"  Falló la imagen de escena {n} (incluso tras reintentar desinfección).")
+            ui.warn(f"  Falló la imagen de escena {n}.")
             failed.append(n)
 
-        # Pausa entre generaciones para evitar rate limits
         if n < len(scenes):
             time.sleep(2)
 
-    print()
-    # ── Fallback para imágenes fallidas ──────────────────────────────────────
     if failed:
-        ui.warn(f"Escenas que fallaron: {failed}. Aplicando fallbacks...")
+        ui.warn(f"Escenas fallidas: {failed}. Aplicando fallbacks...")
         successful_imgs = sorted(list(out_dir.glob("scene_*.png")))
         if successful_imgs:
-            # Usar la primera imagen exitosa como plantilla de fallback por defecto
             fallback_source = successful_imgs[0]
-            
             for f_num in failed:
                 dest_path = out_dir / f"scene_{f_num:02d}.png"
-                # Intentar usar la escena anterior (n-1) si existe
                 prev_path = out_dir / f"scene_{f_num-1:02d}.png"
+                import shutil
                 if prev_path.exists():
-                    import shutil
                     shutil.copy(prev_path, dest_path)
-                    ui.success(f"  [Fallback] Escena {f_num} copiada de Escena {f_num-1:02d}")
                 else:
-                    import shutil
                     shutil.copy(fallback_source, dest_path)
-                    ui.success(f"  [Fallback] Escena {f_num} copiada de {fallback_source.name}")
         else:
-            ui.error("Todas las imágenes de las escenas fallaron. No hay imágenes disponibles para fallback.")
+            ui.error("Todas las imágenes fallaron.")
             return None
-    else:
-        ui.success(f"Todas las imágenes generadas correctamente en: {out_dir}")
 
+    ui.success(f"Imágenes renderizadas en: {out_dir}")
     return out_dir
+
+
+def regenerate_single_scene(story_id: str, scene_number: int, prompt: str = None, model: str = "gpt-image-1") -> Path | None:
+    """Regenera la imagen de una sola escena."""
+    subreddit = find_subreddit_for_id(story_id)
+    if not subreddit:
+        ui.error(f"No se encontró subreddit para {story_id}")
+        return None
+
+    out_dir = SCENES_DIR / subreddit / story_id
+    scenes_json_path = out_dir / "scenes.json"
+    if not scenes_json_path.exists():
+        ui.error("No existe scenes.json")
+        return None
+
+    with open(scenes_json_path, "r", encoding="utf-8") as f:
+        plan_data = json.load(f)
+
+    visual_bible = plan_data.get("visual_bible", "")
+    scenes = plan_data.get("scenes", [])
+    target_scene = next((s for s in scenes if s["scene_number"] == scene_number), None)
+    if not target_scene:
+        ui.error(f"No existe escena {scene_number}")
+        return None
+
+    if prompt:
+        target_scene["image_prompt"] = prompt
+        with open(scenes_json_path, "w", encoding="utf-8") as f:
+            json.dump(plan_data, f, indent=2, ensure_ascii=False)
+
+    img_prompt = prompt or target_scene["image_prompt"]
+    ui.info(f"Regenerando escena {scene_number} con prompt: {img_prompt[:60]}...")
+    img_bytes, error_msg = generate_image(img_prompt, scene_number, model=model, visual_bible=visual_bible)
+    if img_bytes:
+        dest_path = out_dir / f"scene_{scene_number:02d}.png"
+        dest_path.write_bytes(img_bytes)
+        ui.success(f"Escena {scene_number} actualizada: {dest_path}")
+        return dest_path
+    else:
+        ui.error(f"Error regenerando escena {scene_number}: {error_message}")
+        return None
+
+
+def generate_scenes(story_id: str, model: str = "gpt-image-1") -> Path | None:
+    """Orquesta plan_scenes y render_scene_images (compatibilidad CLI)."""
+    plan = plan_scenes(story_id, model=model)
+    if not plan:
+        return None
+    return render_scene_images(story_id, model=model)
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────

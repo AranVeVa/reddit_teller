@@ -14,20 +14,39 @@ def _color(text: str, color: str) -> str:
     return f"{color}{text}{RESET}"
 
 
+import os
+import json
+
+def _emit_event(event_type: str, level: str, msg: str, **kwargs) -> None:
+    if os.environ.get("RT_EVENTS") == "1":
+        payload = {"type": event_type, "level": level, "msg": msg, **kwargs}
+        print(f"__RT_EVENT__{json.dumps(payload, ensure_ascii=False)}", flush=True)
+
+
 def success(msg: str) -> None:
+    _emit_event("log", "success", msg)
     print(f"{_color('  ✔', GREEN)} {msg}")
 
 
 def error(msg: str) -> None:
+    _emit_event("log", "error", msg)
     print(f"{_color('  ✖', RED)} {msg}", file=sys.stderr)
 
 
 def info(msg: str) -> None:
+    _emit_event("log", "info", msg)
     print(f"{_color('  ➜', CYAN)} {msg}")
 
 
 def warn(msg: str) -> None:
+    _emit_event("log", "warn", msg)
     print(f"{_color('  ⚠', YELLOW)} {msg}")
+
+
+def progress(current: float, total: float, msg: str = "") -> None:
+    pct = round((current / max(total, 1)) * 100, 1)
+    _emit_event("progress", "info", msg, current=current, total=total, percent=pct)
+
 
 
 def header(title: str) -> None:
