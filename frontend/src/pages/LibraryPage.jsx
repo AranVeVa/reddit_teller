@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { motion } from "motion/react";
 import { Film, Download, RefreshCw, HardDrive, Play, Mic, Music, Video, Upload, CheckCircle2 } from "lucide-react";
 import Button from "../components/ui/Button";
 import CheckAnimation from "../components/ui/CheckAnimation";
@@ -18,8 +19,24 @@ export default function LibraryPage() {
     { id: "produced_videos", label: "Videos Renderizados", icon: Film, canUpload: false },
     { id: "elevenlabs_audios", label: "Voces ElevenLabs", icon: Mic, canUpload: false },
     { id: "mixed_audios", label: "Audios Mezclados", icon: Music, canUpload: false },
-    { id: "background_videos", label: "Videos de Fondo", icon: Video, canUpload: true, uploadType: "background_video", accept: ".mp4,.mov,.mkv" },
-    { id: "background_audios", label: "Música Ambiental", icon: Music, canUpload: true, uploadType: "background_audio", accept: ".mp3,.wav,.aac" },
+    {
+      id: "background_videos",
+      label: "Videos de Fondo",
+      icon: Video,
+      canUpload: true,
+      uploadType: "background_video",
+      uploadLabel: "Subir Video",
+      accept: ".mp4,.mov,.mkv"
+    },
+    {
+      id: "background_audios",
+      label: "Música Ambiental",
+      icon: Music,
+      canUpload: true,
+      uploadType: "background_audio",
+      uploadLabel: "Subir Audio",
+      accept: ".mp3,.wav,.aac"
+    },
   ];
 
   useEffect(() => {
@@ -62,7 +79,7 @@ export default function LibraryPage() {
 
     try {
       const res = await uploadMediaFile(currentCatObj.uploadType, file);
-      setUploadSuccessMsg(`¡Archivo "${file.name}" subido con éxito y listo para usar en el Paso 6!`);
+      setUploadSuccessMsg(`¡Archivo "${file.name}" subido con éxito!`);
       setTimeout(() => setUploadSuccessMsg(""), 5000);
       await loadLibrary();
     } catch (err) {
@@ -86,79 +103,110 @@ export default function LibraryPage() {
   const currentCatObj = categories.find((c) => c.id === activeTab);
 
   return (
-    <div className="max-w-6xl mx-auto py-8 px-6 space-y-8 pb-16 animate-fade-in">
-      <div className="flex items-center justify-between border-b border-[#2A262E] pb-5">
-        <div>
-          <h1 className="text-2xl font-bold font-display text-[#ECE7E1] tracking-wide uppercase">
-            Biblioteca Multimedia Integral
-          </h1>
-          <p className="text-xs text-[#8E8780] mt-1">
-            Explora todos los videos renderizados, narraciones, audios mezclados y sube tus propios videos/música de fondo.
-          </p>
+    <div className="w-full py-8 pb-16 animate-fade-in space-y-6">
+      {/* Top Header Container */}
+      <div className="max-w-6xl mx-auto px-6 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-black font-display text-[#ECE7E1] tracking-wider uppercase">
+                BIBLIOTECA
+              </h1>
+              <span className="w-2.5 h-2.5 rounded-full bg-[#E5484D]" />
+            </div>
+            <p className="text-xs text-[#8E8780] mt-1 font-sans">
+              Explora todos tus videos renderizados, narraciones, audios mezclados y gestiona tu contenido multimedia.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {currentCatObj?.canUpload && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={currentCatObj.accept}
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#9F1D20] hover:bg-[#B3261E] active:scale-[0.98] text-white text-xs font-bold font-mono uppercase tracking-wider rounded-xl border border-[#E5484D]/30 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  {uploading ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                  ) : (
+                    <Upload className="w-4 h-4 text-white" />
+                  )}
+                  <span>{currentCatObj.uploadLabel}</span>
+                </button>
+              </>
+            )}
+
+            <Button variant="secondary" icon={RefreshCw} onClick={loadLibrary}>
+              Actualizar
+            </Button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {currentCatObj?.canUpload && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={currentCatObj.accept}
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <Button
-                variant="primary"
-                icon={Upload}
-                loading={uploading}
-                onClick={() => fileInputRef.current?.click()}
+        {uploadSuccessMsg && (
+          <CheckAnimation message={uploadSuccessMsg} />
+        )}
+      </div>
+
+      {/* Full-Width Divider Tabs Sector - 100% Screen Width Always */}
+      <div className="w-full border-b border-[#2A262E] py-1 bg-[#141217]/40 shadow-sm">
+        <div className="w-full grid grid-cols-2 sm:grid-cols-5 divide-x divide-[#2A262E]/70 items-center">
+          {categories.map((c) => {
+            const Icon = c.icon;
+            const isActive = activeTab === c.id;
+            const count = libraryData[c.id]?.length || 0;
+
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => handleTabChange(c.id)}
+                className="relative w-full px-3 py-3.5 flex flex-col items-center justify-center text-center transition-all cursor-pointer select-none group"
               >
-                Subir {currentCatObj.label}
-              </Button>
-            </>
-          )}
+                <div className="flex items-center gap-2 mb-1 z-10">
+                  <Icon className={`w-4 h-4 transition-colors duration-200 ${isActive ? "text-[#E5484D]" : "text-[#8E8780] group-hover:text-[#ECE7E1]"}`} />
+                  <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-full transition-colors duration-200 ${
+                    isActive ? "bg-[#9F1D20] text-white" : "bg-[#0E0D0F] text-[#8E8780]"
+                  }`}>
+                    {count}
+                  </span>
+                </div>
 
-          <Button variant="secondary" icon={RefreshCw} onClick={loadLibrary}>
-            Actualizar
-          </Button>
+                <div className="relative z-10 flex items-center justify-center w-full">
+                  <span
+                    className="text-xs font-bold tracking-wider uppercase transition-colors duration-200"
+                    style={{ color: isActive ? "#E5484D" : "#8E8780" }}
+                  >
+                    {c.label}
+                  </span>
+
+                  {isActive && (
+                    <motion.span
+                      layoutId="activeLibraryTabRedText"
+                      className="absolute inset-0 text-xs font-black tracking-wider uppercase text-[#E5484D] pointer-events-none drop-shadow-[0_0_8px_rgba(229,72,77,0.5)] flex items-center justify-center"
+                      transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                    >
+                      {c.label}
+                    </motion.span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {uploadSuccessMsg && (
-        <CheckAnimation message={uploadSuccessMsg} />
-      )}
-
-      {/* Category Filter Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
-        {categories.map((c) => {
-          const Icon = c.icon;
-          const isActive = activeTab === c.id;
-          const count = libraryData[c.id]?.length || 0;
-
-          return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => handleTabChange(c.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none border whitespace-nowrap ${
-                isActive
-                  ? "bg-[#232029] text-[#ECE7E1] border-[#E5484D] shadow-lg shadow-[#E5484D]/10 scale-[1.02]"
-                  : "bg-[#141217] text-[#8E8780] border-[#2A262E] hover:border-[#3D3844] hover:text-[#ECE7E1]"
-              }`}
-            >
-              <Icon className={`w-4 h-4 ${isActive ? "text-[#E5484D]" : "text-[#8E8780]"}`} />
-              <span>{c.label}</span>
-              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                isActive ? "bg-[#9F1D20] text-white" : "bg-[#0E0D0F] text-[#8E8780]"
-              }`}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {currentItems.length === 0 ? (
+      {/* Media Items Content Container */}
+      <div className="max-w-6xl mx-auto px-6 space-y-6">
+        {currentItems.length === 0 ? (
         <div className="bg-[#141217] border border-[#2A262E] rounded-2xl p-16 text-center space-y-4">
           <Film className="w-10 h-10 text-[#5C554E] mx-auto" />
           <div className="space-y-1">
@@ -167,19 +215,21 @@ export default function LibraryPage() {
             </h3>
             <p className="text-xs text-[#8E8780] max-w-sm mx-auto">
               {currentCatObj?.canUpload
-                ? `Haz clic en "Subir ${currentCatObj.label}" para añadir tu propio archivo.`
+                ? `Haz clic en "${currentCatObj.uploadLabel}" para añadir tu propio archivo.`
                 : "Genera recursos desde el Estudio de Producción para verlos organizados aquí."}
             </p>
           </div>
 
           {currentCatObj?.canUpload && (
-            <Button
-              variant="primary"
-              icon={Upload}
+            <button
+              type="button"
+              disabled={uploading}
               onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#9F1D20] hover:bg-[#E5484D] text-white text-xs font-bold font-mono uppercase tracking-wider rounded-xl shadow-lg transition-all cursor-pointer"
             >
-              Subir Archivo Ahora
-            </Button>
+              <Upload className="w-4 h-4" />
+              <span>{currentCatObj.uploadLabel} Ahora</span>
+            </button>
           )}
         </div>
       ) : (
@@ -280,5 +330,7 @@ export default function LibraryPage() {
         </div>
       )}
     </div>
+    </div>
   );
 }
+
