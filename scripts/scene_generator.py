@@ -29,7 +29,26 @@ from config import OPENAI_API_KEY, SUBS_DIR, SCENES_DIR
 from scripts import termui as ui
 
 # ── Visual style from guide.md ─────────────────────────────────────────────
-VISUAL_STYLE = """Dark papercraft horror world. Handcrafted paper-diorama environment made from folded paper, layered cardstock, and origami-like structures. Stylized but believable proportions. Clean geometric shapes. Slightly rough paper edges. Visible paper folds and layered construction. Soft cinematic lighting. Dark color palette with muted blues, greys, browns, and desaturated warm lights. Atmospheric fog. Subtle volumetric lighting. Cozy yet unsettling mood. Horror storybook aesthetic. Looks like a handcrafted miniature world built entirely from paper. Not realistic. Not cartoonish. Not anime. Not claymation. Not low-poly. High visual consistency. Professional animated short film quality. 12 FPS animation style with subtle stop-motion feel. Gentle camera movement implied. Paper textures remain visible. Vertical 9:16 composition. Designed for horror storytelling and mystery narrations. The scene should feel like a dark memory reconstructed inside a handmade paper world. Resolution 1080x1920."""
+VISUAL_STYLE = """Premium 3D paper cut art and layered shadow box illustration. Every scene must look like a photograph of a physical, handcrafted paper-cut sculpture made from multiple stacked sheets of heavy textured cardstock.
+
+STYLE & COMPOSITION:
+- Layered papercut art (paper cut-out). A 3D paper shadow box environment with multiple overlapping sheets of cut paper.
+- Characters and scene elements are rendered as flat silhouettes cut out of physical sheets of colored paper, arranged in nested, stacked layers.
+- Clear physical depth with visible drop shadows cast by each paper layer onto the ones behind it, creating a multi-dimensional tunnel or shadowbox effect.
+- The artwork must feel like a real photograph of a physical paper sculpture with visible paper thickness, not a flat digital vector drawing or a cartoon.
+
+MATERIALS & TEXTURE:
+- Everything is built from heavy matte cardstock, colored construction paper, and textured craft paper with a visible, realistic paper grain and fine fibers.
+- Precise, clean cut edges as if cut by a scalpel or precision knife.
+- Absolutely NO smooth digital vector gradients, no glossy plastic surfaces, and no CGI rendering.
+
+LIGHTING & MOOD:
+- Eerie, atmospheric, and spooky soft ambient lighting.
+- Unsettling and creepy horror storybook mood.
+- Dark, desaturated color palette (deep navy blues, slate grays, dark forest greens, charcoal, and warm desaturated light accents).
+
+AVOID (NEGATIVE PROMPT):
+Flat digital vector art, smooth 2D cartoons, anime, 3D CGI rendering, photorealistic photography of real people, plastic, glossy, metallic, watercolor, oil painting, pencil drawing, sketch, low detail, blurry, noisy textures, oversaturated colors, harsh lighting, text, logo."""
 
 # ── System prompt for GPT ───────────────────────────────────────────────────
 SCENE_ANALYSIS_SYSTEM = """You are a visual storytelling director specializing in horror short-form video content.
@@ -163,32 +182,40 @@ Based on the duration ({int(total_duration)} seconds), create approximately {sug
         "Content-Type": "application/json",
     }
 
-    try:
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=60,
-        )
-        if resp.status_code != 200:
-            ui.error(f"GPT API error ({resp.status_code}): {resp.text[:300]}")
-            return None
+    MAX_RETRIES = 3
+    last_error = "Unknown error"
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                parsed = json.loads(content)
+                scenes = parsed.get("scenes", [])
+                visual_bible = parsed.get("visual_bible", "")
+                if visual_bible:
+                    ui.success(f"Visual Bible generada ({len(visual_bible)} chars)")
+                else:
+                    ui.warn("No se generó visual bible — la consistencia visual puede variar.")
+                ui.success(f"Plan generado: {len(scenes)} escenas")
+                return scenes, visual_bible
+            else:
+                last_error = f"GPT API error ({resp.status_code}): {resp.text[:300]}"
+                ui.warn(f"Intento {attempt}/{MAX_RETRIES} de llamar a GPT falló con estado {resp.status_code}")
+        except Exception as e:
+            last_error = str(e)
+            ui.warn(f"Intento {attempt}/{MAX_RETRIES} de llamar a GPT falló con error: {e}")
+        
+        if attempt < MAX_RETRIES:
+            time.sleep(2 * attempt)
 
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-        scenes = parsed.get("scenes", [])
-        visual_bible = parsed.get("visual_bible", "")
-        if visual_bible:
-            ui.success(f"Visual Bible generada ({len(visual_bible)} chars)")
-        else:
-            ui.warn("No se generó visual bible — la consistencia visual puede variar.")
-        ui.success(f"Plan generado: {len(scenes)} escenas")
-        return scenes, visual_bible
-
-    except Exception as e:
-        ui.error(f"Error al llamar a GPT: {e}")
-        return None
+    ui.error(f"Todas las llamadas de análisis de historia con GPT-4o fallaron. Último error: {last_error}")
+    return None
 
 
 def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1", visual_bible: str = "") -> tuple[bytes | None, str | None]:
@@ -230,32 +257,50 @@ def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1", visu
         }
         endpoint = "https://api.openai.com/v1/images/generations"
 
-    try:
-        ui.info(f"  Generando imagen con {model}...")
-        resp = requests.post(endpoint, json=payload, headers=headers, timeout=120)
+    MAX_RETRIES = 3
+    last_error = "Unknown error"
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            ui.info(f"  Generando imagen con {model} (Intento {attempt}/{MAX_RETRIES})...")
+            resp = requests.post(endpoint, json=payload, headers=headers, timeout=120)
 
-        if resp.status_code != 200:
-            error_msg = resp.text
-            ui.error(f"  Image API error ({resp.status_code}): {error_msg[:300]}")
-            return None, error_msg
+            if resp.status_code != 200:
+                last_error = resp.text
+                ui.warn(f"  Image API error ({resp.status_code}) en intento {attempt}: {last_error[:200]}")
+                # If it's a safety/rate trigger, don't retry immediately
+                if "content_policy_violation" in last_error or "safety" in last_error.lower() or resp.status_code == 400:
+                    return None, last_error
+                if attempt < MAX_RETRIES:
+                    time.sleep(2 * attempt)
+                continue
 
-        data = resp.json()
-        image_data = data["data"][0]
+            data = resp.json()
+            image_data = data["data"][0]
 
-        # gpt-image-1 may return b64_json; dall-e-3 returns url
-        if "b64_json" in image_data and image_data["b64_json"]:
-            import base64
-            return base64.b64decode(image_data["b64_json"]), None
-        elif "url" in image_data and image_data["url"]:
-            img_resp = requests.get(image_data["url"], timeout=60)
-            return img_resp.content, None
-        else:
-            ui.error("  No se encontró imagen en la respuesta.")
-            return None, "No image found in response data"
+            # gpt-image-1 may return b64_json; dall-e-3 returns url
+            if "b64_json" in image_data and image_data["b64_json"]:
+                import base64
+                return base64.b64decode(image_data["b64_json"]), None
+            elif "url" in image_data and image_data["url"]:
+                img_resp = requests.get(image_data["url"], timeout=60)
+                if img_resp.status_code == 200:
+                    return img_resp.content, None
+                else:
+                    last_error = f"Failed to download image: {img_resp.status_code}"
+                    ui.warn(f"  Error al descargar imagen en intento {attempt}: {last_error}")
+            else:
+                last_error = "No image found in response data"
+                ui.warn(f"  Respuesta vacía en intento {attempt}")
+                
+        except Exception as e:
+            last_error = str(e)
+            ui.warn(f"  Error en intento {attempt} de generar imagen: {e}")
+            
+        if attempt < MAX_RETRIES:
+            time.sleep(2 * attempt)
 
-    except Exception as e:
-        ui.error(f"  Error generando imagen: {e}")
-        return None, str(e)
+    ui.error(f"  Todos los intentos de generación de imagen fallaron. Último error: {last_error[:200]}")
+    return None, last_error
 
 
 def rewrite_prompt_for_safety(original_prompt: str, error_message: str) -> str | None:
@@ -285,28 +330,33 @@ def rewrite_prompt_for_safety(original_prompt: str, error_message: str) -> str |
         "Content-Type": "application/json",
     }
     
-    try:
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            json={
-                "model": "gpt-4o",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                "temperature": 0.5,
-            },
-            headers=headers,
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            new_prompt = resp.json()["choices"][0]["message"]["content"].strip()
-            ui.success(f"  [Reescrito] Nuevo prompt sugerido: {new_prompt}")
-            return new_prompt
-        else:
-            ui.error(f"  Error al reescribir prompt ({resp.status_code}): {resp.text}")
-    except Exception as e:
-        ui.error(f"  Error en llamada de reescritura: {e}")
+    MAX_RETRIES = 3
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                json={
+                    "model": "gpt-4o",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    "temperature": 0.5,
+                },
+                headers=headers,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                new_prompt = resp.json()["choices"][0]["message"]["content"].strip()
+                ui.success(f"  [Reescrito] Nuevo prompt sugerido: {new_prompt}")
+                return new_prompt
+            else:
+                ui.warn(f"  Intento {attempt}/{MAX_RETRIES} de reescritura de prompt falló: {resp.status_code}")
+        except Exception as e:
+            ui.warn(f"  Intento {attempt}/{MAX_RETRIES} de reescritura de prompt falló con error: {e}")
+        
+        if attempt < MAX_RETRIES:
+            time.sleep(2 * attempt)
     return None
 
 

@@ -24,7 +24,12 @@ def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3, 
 
     for seg in whisper_segments:
         if "words" in seg:
-            all_words.extend(seg["words"])
+            for w in seg["words"]:
+                all_words.append({
+                    "word":  w["word"].strip(),
+                    "start": w["start"],
+                    "end":   w["end"],
+                })
         else:
             words  = seg["text"].strip().split()
             dur    = (seg["end"] - seg["start"]) / max(len(words), 1)
@@ -58,12 +63,18 @@ def _word_level_segments(whisper_segments: list[dict], words_per_card: int = 3, 
     return cards
 
 
-def generate_srt(audio_path: Path, words_per_card: int = 3, is_vertical: bool = True) -> Path:
+def generate_srt(audio_path: Path, words_per_card: int = 3, is_vertical: bool = True, language: str = None) -> Path:
     audio_path = Path(audio_path)
     ui.info(f"Transcribiendo {audio_path.name}...")
 
     model    = whisper.load_model("base")
-    result   = model.transcribe(str(audio_path), word_timestamps=True)
+    
+    transcribe_opts = {"word_timestamps": True}
+    if language:
+        transcribe_opts["language"] = language
+        ui.info(f"Forzando idioma de transcripción: {language}")
+
+    result   = model.transcribe(str(audio_path), **transcribe_opts)
     segments = result["segments"]
 
     cards      = _word_level_segments(segments, words_per_card, is_vertical=is_vertical)

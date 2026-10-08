@@ -100,7 +100,8 @@ def main():
     parser.add_argument("--dark-mode", action="store_true", default=None, help="Usar Reddit card en modo oscuro")
     parser.add_argument("--light-mode", action="store_false", dest="dark_mode", help="Usar Reddit card en modo claro")
     parser.add_argument("--start-sec", type=int, help="Segundo de inicio para el video clásico")
-    parser.add_argument("--yes", "-y", action="store_true", help="Auto-aprobar todas las confirmaciones")
+    parser.add_argument("--yes", "-y", action="store_true", help="Auto-aprobar confirmaciones del pipeline (audio, mezcla, video, etc.)")
+    parser.add_argument("--auto-accept", action="store_true", help="Aceptar historias automáticamente y omitir su edición")
     args = parser.parse_args()
 
     ui.header("reddit_teller 2.0")
@@ -170,14 +171,19 @@ def main():
         if len(historias_aceptadas) >= limite:
             break
 
-        ui.header(f"Candidato {c_idx+1}/{len(candidatos)} (Aceptados: {len(historias_aceptadas)}/{limite})")
-        ui.info(f"Título: {h['title']}")
-        ui.info(f"Score: {h['score']} | Caracteres: {len(h['content'])}")
-        preview = h["content"]
-        ui.info(f"Preview:\n{preview}")
+        ui.show_candidate(
+            index=c_idx + 1,
+            total=len(candidatos),
+            accepted=len(historias_aceptadas),
+            limit=limite,
+            subreddit=subreddit,
+            title=h["title"],
+            score=h["score"],
+            content=h["content"],
+        )
         print()
 
-        if args.yes:
+        if args.auto_accept:
             opcion = "s"
         else:
             opcion = input(f"{ui.prompt_str('¿Deseas continuar con esta historia? [s/n/q] (s): ')}").strip().lower() or "s"
@@ -195,7 +201,7 @@ def main():
         story_file = subreddit_story_dir / f"{subreddit}_{h['id']}.txt"
         story_file.write_text(f"{h['title']}\n\n{h['content']}\n", encoding="utf-8")
         
-        if not args.yes:
+        if not args.auto_accept:
             ui.success(f"Historia guardada en: {story_file}")
             ui.info("Abre el archivo anterior, edítalo como desees y guárdalo.")
             input(f"\n{ui.prompt_str('Presiona ENTER cuando hayas terminado de editar para continuar... ')}")
@@ -226,8 +232,7 @@ def main():
 
     historias = historias_aceptadas
 
-    # Mostrar las historias aceptadas definitivas
-    mostrar_historias(historias)
+    # Guardar las historias aceptadas (y editadas) en el archivo combinado para referencia
 
     total_chars = sum(len(h["content"]) for h in historias)
     total_segs  = total_chars / CHARS_PER_SECOND
@@ -354,6 +359,19 @@ def main():
         ui.info("Proceso terminado.")
         return
 
+    # ── Detectar idioma de la historia para Whisper ─────────────────────────
+    import re
+    story_lang = None
+    if historias:
+        es_words = {"y", "el", "la", "de", "que", "un", "una", "en", "es", "no", "con", "por", "para", "como", "los", "las", "este", "esta", "pero"}
+        en_words = {"the", "and", "of", "to", "a", "in", "is", "that", "it", "was", "for", "on", "with", "as", "this", "my", "you", "he", "she", "but"}
+        sample_text = historias[0]["content"].lower()
+        words = re.findall(r'\b[a-zA-ZáéíóúñÁÉÍÓÚÑ]+\b', sample_text)
+        es_count = sum(1 for w in words if w in es_words)
+        en_count = sum(1 for w in words if w in en_words)
+        story_lang = "es" if es_count > en_count else "en"
+        ui.info(f"Idioma detectado en la historia: {story_lang.upper()}")
+
     # ── Elegir tipo de fondo ────────────────────────────────────────────────
     story_id  = historias[0]["id"]
     use_scenes = False
@@ -382,7 +400,7 @@ def main():
         else:
             words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 6)
         is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
-        srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical)
+        srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical, language=story_lang)
         subs_sub_dir = SUBS_DIR / subreddit
         subs_sub_dir.mkdir(parents=True, exist_ok=True)
         srt_new_path = subs_sub_dir / srt_path.name
@@ -431,7 +449,7 @@ def main():
             else:
                 words_per_card = ask_int("¿Palabras por tarjeta de subtítulo?", 3)
             is_vertical = VIDEO_WIDTH < VIDEO_HEIGHT
-            srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical)
+            srt_path = generate_srt(audio_path, words_per_card=words_per_card, is_vertical=is_vertical, language=story_lang)
             subs_sub_dir = SUBS_DIR / subreddit
             subs_sub_dir.mkdir(parents=True, exist_ok=True)
             srt_new_path = subs_sub_dir / srt_path.name

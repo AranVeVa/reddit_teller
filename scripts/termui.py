@@ -1,5 +1,6 @@
 import sys
 import shutil
+import textwrap
 
 RESET = "\033[0m"
 GREEN = "\033[92m"
@@ -14,19 +15,19 @@ def _color(text: str, color: str) -> str:
 
 
 def success(msg: str) -> None:
-    print(f"{_color('[OK]', GREEN)} {msg}")
+    print(f"{_color('  ✔', GREEN)} {msg}")
 
 
 def error(msg: str) -> None:
-    print(f"{_color('[ERR]', RED)} {msg}", file=sys.stderr)
+    print(f"{_color('  ✖', RED)} {msg}", file=sys.stderr)
 
 
 def info(msg: str) -> None:
-    print(f"{_color('[..]', CYAN)} {msg}")
+    print(f"{_color('  ➜', CYAN)} {msg}")
 
 
 def warn(msg: str) -> None:
-    print(f"{_color('[!]', YELLOW)} {msg}")
+    print(f"{_color('  ⚠', YELLOW)} {msg}")
 
 
 def header(title: str) -> None:
@@ -34,7 +35,7 @@ def header(title: str) -> None:
     term_width = shutil.get_terminal_size((80, 20)).columns
     width = min(term_width, 80)
     # Truncate title if too long for the box
-    max_title_len = width - 2  # account for side borders
+    max_title_len = width - 4  # account for side borders + space
     if len(title) > max_title_len:
         title = title[:max_title_len]
     sep = "═" * (width - 2)  # side borders consume 2 chars
@@ -48,3 +49,34 @@ def header(title: str) -> None:
 
 def prompt_str(prompt: str) -> str:
     return f"{BOLD}{CYAN}{prompt}{RESET}"
+
+
+def visual_len(text: str) -> int:
+    """Calculates the visual width of a string in the terminal, counting emojis as 2 columns."""
+    length = 0
+    for char in text:
+        cp = ord(char)
+        if (0x1F300 <= cp <= 0x1F9FF or 
+            0x1FA70 <= cp <= 0x1FAFF or 
+            0x2600 <= cp <= 0x27BF or
+            0x1F000 <= cp <= 0x1F2FF):
+            length += 2
+        else:
+            length += 1
+    return length
+
+
+def show_candidate(
+    index: int,
+    total: int,
+    accepted: int,
+    limit: int,
+    subreddit: str,
+    title: str,
+    score: int,
+    content: str
+) -> None:
+    """Prints a candidate story in a simple, fluent preview format."""
+    print(f"{_color('  ➜', CYAN)} [{index}] {BOLD}{title}{RESET} (score: {score})")
+    print(f"{_color('  ➜', CYAN)} Content:")
+    print(content)

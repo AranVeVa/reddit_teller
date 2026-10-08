@@ -28,8 +28,8 @@ def text_to_audio(texto: str, nombre: str) -> Path | None:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
     payload = {
         "text": cleaned_text,
-        # Updated to a free‑tier compatible model
-        "model_id": "eleven_turbo_v2",
+        # Updated to a free‑tier compatible model, multilingualmodel:eleven_multilingual_v2, turbomodel:eleven_turbo_v2
+        "model_id": "eleven_multilingual_v2",
         "voice_settings": {
             "stability": 0.4,
             "similarity_boost": 0.8,
