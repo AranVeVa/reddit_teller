@@ -312,3 +312,11 @@ def db_list_projects(user_id: str | None = None) -> list[dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error al listar proyectos desde Neon: {e}")
         return []
+# ── Ejecución directa de prueba / inicialización ────────────────────────────
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    if init_db():
+        print("Tablas creadas exitosamente en Neon.")
+    else:
+        print("No se pudieron crear las tablas. Revisa que DATABASE_URL esté en el .env.")
