@@ -39,7 +39,7 @@ def parse_env_file(env_file: Path = ENV_PATH) -> tuple[dict[str, str], list[str]
     return data, lines
 
 
-def update_env_file(updates: dict[str, str], env_file: Path = ENV_PATH) -> None:
+def update_env_file(updates: dict, env_file: Path = ENV_PATH) -> None:
     """
     Actualiza variables en .env manteniendo comentarios y orden.
     Variables nuevas se agregan al final.
@@ -53,7 +53,12 @@ def update_env_file(updates: dict[str, str], env_file: Path = ENV_PATH) -> None:
         if stripped and not stripped.startswith("#") and "=" in line:
             key = line.split("=", 1)[0].strip()
             if key in updates:
-                new_val = updates[key]
+                new_val = str(updates[key]).strip()
+                # Si contiene '•', es un secreto enmascarado enviado desde la UI; se conserva el valor actual
+                if "•" in new_val:
+                    new_lines.append(line)
+                    updated_keys.add(key)
+                    continue
                 new_lines.append(f"{key}={new_val}")
                 updated_keys.add(key)
                 continue
@@ -62,7 +67,9 @@ def update_env_file(updates: dict[str, str], env_file: Path = ENV_PATH) -> None:
     # Agregar llaves completamente nuevas que no existían
     for key, val in updates.items():
         if key not in updated_keys:
-            new_lines.append(f"{key}={val}")
+            val_str = str(val).strip()
+            if "•" not in val_str:
+                new_lines.append(f"{key}={val_str}")
 
     content = "\n".join(new_lines) + "\n"
 
@@ -93,6 +100,7 @@ def get_masked_settings() -> dict:
         "VIDEO_WIDTH": int(data.get("VIDEO_WIDTH", 1080)),
         "VIDEO_HEIGHT": int(data.get("VIDEO_HEIGHT", 1920)),
         "BACKGROUND_VOLUME_DB": float(data.get("BACKGROUND_VOLUME_DB", -18)),
+        "DATABASE_URL": mask_secret(data.get("DATABASE_URL")),
     }
 
 

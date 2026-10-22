@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: reddit-teller-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/settings
+    envVars:
+      - key: DATABASE_URL
+        sync: false         # Lo configuras manualmente en el dashboard de Render
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEYS
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: ELEVENLABS_SPEED
+        value: "1.1"
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false
+      - key: REDDIT_USER_AGENT
+        value: "python:reddit_teller:v1.0"
+      - key: JWT_SECRET
+        sync: false         # Genera una clave secreta aleatoria y ponla aquí
+      - key: MAX_STORAGE_MB
+        value: "350"
+      - key: VIDEO_WIDTH
+        value: "1080"
+      - key: VIDEO_HEIGHT
+        value: "1920"
+      - key: BACKGROUND_VOLUME_DB
+        value: "-18"
+      - key: PYTHONIOENCODING
+        value: "utf-8"

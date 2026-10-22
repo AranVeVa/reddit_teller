@@ -9,6 +9,13 @@ import json
 import argparse
 from pathlib import Path
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(ROOT))
 
@@ -209,6 +216,7 @@ def run_worker_step(project_id: str, step_name: str, args_data: dict):
             subs_res = project.get("subtitles_result")
             srt_path = subs_res.get("srt_path") if (subs_res and isinstance(subs_res, dict)) else None
             dark = args_data.get("dark_mode", project.get("dark_mode", True))
+            fast_m = args_data.get("fast_mode", False)
 
             video_path = pipeline.step_render_video(
                 mixed_audio_path=mixed_path,
@@ -221,6 +229,7 @@ def run_worker_step(project_id: str, step_name: str, args_data: dict):
                 start_second=start_sec,
                 srt_path=srt_path,
                 dark_mode=dark,
+                fast_mode=fast_m,
             )
             project["final_video_path"] = video_path
             project["current_step"] = 7

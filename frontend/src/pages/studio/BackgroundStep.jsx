@@ -1,14 +1,22 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Image as ImageIcon, Video, Sparkles, Edit3, CheckCircle2 } from "lucide-react";
+import { Image as ImageIcon, Video, Sparkles, Edit3, CheckCircle2, Link as LinkIcon, Globe, Check } from "lucide-react";
 import Field from "../../components/ui/Field";
 import Button from "../../components/ui/Button";
-import { fetchAssets, updateProject } from "../../api/client";
+import { fetchAssets, updateProject, getMediaUrl, validateVideoLink } from "../../api/client";
 
 export default function BackgroundStep({ project, onRunStep, loading, onUpdateProject }) {
   const [bgType, setBgType] = useState(project?.background_type || "scenes");
   const [assets, setAssets] = useState(null);
   const [selectedClassicVideo, setSelectedClassicVideo] = useState(project?.background_video_path || "");
   const [startSecond, setStartSecond] = useState(project?.start_second || 0);
+  const [classicSourceType, setClassicSourceType] = useState(
+    (project?.background_video_path || "").startsWith("http") ? "url" : "local"
+  );
+  const [videoUrlInput, setVideoUrlInput] = useState(
+    (project?.background_video_path || "").startsWith("http") ? project.background_video_path : ""
+  );
+  const [urlValidating, setUrlValidating] = useState(false);
+  const [urlSuccess, setUrlSuccess] = useState(false);
 
   const [editingSceneNum, setEditingSceneNum] = useState(null);
   const [editedPrompt, setEditedPrompt] = useState("");
@@ -79,6 +87,24 @@ export default function BackgroundStep({ project, onRunStep, loading, onUpdatePr
     });
     setEditingSceneNum(null);
     setCacheBuster(Date.now());
+  };
+
+
+  const handleApplyVideoUrl = async () => {
+    if (!videoUrlInput.trim()) return;
+    setUrlValidating(true);
+    setUrlSuccess(false);
+    try {
+      await validateVideoLink(videoUrlInput.trim());
+      setSelectedClassicVideo(videoUrlInput.trim());
+      saveBackgroundConfig("classic", videoUrlInput.trim(), startSecond);
+      setUrlSuccess(true);
+      setTimeout(() => setUrlSuccess(false), 3000);
+    } catch (e) {
+      alert("Error con el enlace de video: " + (e.message || e));
+    } finally {
+      setUrlValidating(false);
+    }
   };
 
   const handleSetTimeAsStart = () => {
@@ -216,7 +242,7 @@ export default function BackgroundStep({ project, onRunStep, loading, onUpdatePr
                   const isEditing = editingSceneNum === s.scene_number;
                   const subreddit = project?.subreddit || "nosleep";
                   const storyId = project?.accepted_stories?.[0]?.id;
-                  const imgUrl = `/media/scenes/${subreddit}/${storyId}/scene_${String(s.scene_number).padStart(2, "0")}.png?t=${cacheBuster}`;
+                  const imgUrl = getMediaUrl(`/media/scenes/${subreddit}/${storyId}/scene_${String(s.scene_number).padStart(2, "0")}.png?t=${cacheBuster}`);
 
                   return (
                     <div
@@ -320,19 +346,76 @@ export default function BackgroundStep({ project, onRunStep, loading, onUpdatePr
         <div className="bg-[#141217] border border-[#2A262E] rounded-2xl p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
-              <Field label="Seleccionar Video de Fondo Clásico">
-                <select
-                  value={selectedClassicVideo}
-                  onChange={(e) => saveBackgroundConfig("classic", e.target.value, startSecond)}
-                  className="w-full px-4 py-2.5 bg-[#0E0D0F] border border-[#2A262E] focus:border-[#E5484D] rounded-xl text-sm font-semibold text-[#ECE7E1]"
-                >
-                  {assets?.background_videos?.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 border-b border-[#2A262E] pb-2">
+                  <button
+                    type="button"
+                    onClick={() => setClassicSourceType("local")}
+                    className={`px-3 py-1.5 text-xs font-mono font-bold rounded-lg transition-colors cursor-pointer ${
+                      classicSourceType === "local"
+                        ? "bg-[#E5484D] text-white"
+                        : "text-[#8E8780] hover:text-[#ECE7E1]"
+                    }`}
+                  >
+                    Videos del Servidor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClassicSourceType("url")}
+                    className={`px-3 py-1.5 text-xs font-mono font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      classicSourceType === "url"
+                        ? "bg-[#E5484D] text-white"
+                        : "text-[#8E8780] hover:text-[#ECE7E1]"
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    Enlace URL (Ahorra Espacio)
+                  </button>
+                </div>
+
+                {classicSourceType === "local" ? (
+                  <Field label="Seleccionar Video de Fondo">
+                    <select
+                      value={selectedClassicVideo}
+                      onChange={(e) => saveBackgroundConfig("classic", e.target.value, startSecond)}
+                      className="w-full px-4 py-2.5 bg-[#0E0D0F] border border-[#2A262E] focus:border-[#E5484D] rounded-xl text-sm font-semibold text-[#ECE7E1]"
+                    >
+                      {assets?.background_videos?.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : (
+                  <Field
+                    label="Pegar Enlace Directo a Video MP4"
+                    description="No ocupa almacenamiento permanente en el servidor (se descarga temporalmente solo para el renderizado)"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <LinkIcon className="w-4 h-4 text-[#8E8780] absolute left-3 top-3 pointer-events-none" />
+                        <input
+                          type="url"
+                          value={videoUrlInput}
+                          onChange={(e) => setVideoUrlInput(e.target.value)}
+                          placeholder="https://ejemplo.com/gameplay.mp4"
+                          className="w-full pl-9 pr-4 py-2.5 bg-[#0E0D0F] border border-[#2A262E] focus:border-[#E5484D] rounded-xl text-xs font-mono text-[#ECE7E1]"
+                        />
+                      </div>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={urlValidating}
+                        onClick={handleApplyVideoUrl}
+                        className="shrink-0"
+                      >
+                        {urlSuccess ? <Check className="w-4 h-4" /> : "Usar URL"}
+                      </Button>
+                    </div>
+                  </Field>
+                )}
+              </div>
 
               <Field
                 label="Segundo de Inicio (start_second)"
@@ -384,7 +467,7 @@ export default function BackgroundStep({ project, onRunStep, loading, onUpdatePr
                 <div className="aspect-[9/16] max-h-72 mx-auto bg-black rounded-xl overflow-hidden border border-[#2A262E] shadow-lg relative">
                   <video
                     ref={videoRef}
-                    src={`/media/${selectedClassicVideo}`}
+                    src={selectedClassicVideo.startsWith("http://") || selectedClassicVideo.startsWith("https://") ? selectedClassicVideo : getMediaUrl(`/media/${selectedClassicVideo}`)}
                     controls
                     onLoadedMetadata={() => {
                       if (videoRef.current) setVideoDuration(videoRef.current.duration);

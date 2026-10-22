@@ -5,7 +5,7 @@ import asyncio
 import subprocess
 import uuid
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Any
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
@@ -16,8 +16,14 @@ sys.path.insert(0, str(ROOT))
 
 from server import envfile
 from server import projects
+from server import db
+from server import storage
 
 app = FastAPI(title="reddit_teller Local API", version="2.0.0")
+
+@app.on_event("startup")
+def on_startup():
+    db.init_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,8 +37,17 @@ app.add_middleware(
 JOBS: dict[str, dict] = {}
 
 
+
+class AuthRequest(BaseModel):
+    email: str
+    password: str
+
+
+class VideoLinkValidate(BaseModel):
+    url: str
+
 class SettingsUpdate(BaseModel):
-    settings: dict[str, str]
+    settings: dict[str, Any]
 
 
 class RevealRequest(BaseModel):
@@ -51,6 +66,72 @@ class ProjectCreate(BaseModel):
 class StepRunRequest(BaseModel):
     args: dict = {}
 
+
+
+@app.post("/api/auth/register")
+def auth_register(payload: AuthRequest):
+    if not payload.email or not payload.password:
+        raise HTTPException(status_code=400, detail="Email y contraseña son requeridos")
+    if len(payload.password) < 4:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 4 caracteres")
+    user = db.register_user(payload.email, payload.password)
+    if not user:
+        raise HTTPException(status_code=409, detail="El correo ya se encuentra registrado")
+    return {"status": "ok", "user": user}
+
+
+@app.post("/api/auth/login")
+def auth_login(payload: AuthRequest):
+    user = db.authenticate_user(payload.email, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
+    return {"status": "ok", "user": user}
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return {"authenticated": False, "user": None}
+    token = auth_header.split(" ", 1)[1].strip()
+    payload = db.decode_access_token(token)
+    if not payload:
+        return {"authenticated": False, "user": None}
+    profile = db.get_user_profile(payload.get("user_id", ""))
+    return {"authenticated": True, "user": profile}
+
+
+@app.get("/api/storage/status")
+def storage_status():
+    return storage.get_storage_stats()
+
+
+@app.post("/api/storage/cleanup")
+def storage_cleanup():
+    res = storage.cleanup_storage_if_needed(target_free_margin_mb=100)
+    return {"status": "ok", **res}
+
+
+@app.post("/api/links/validate_video")
+def validate_video_link(payload: VideoLinkValidate):
+    url = payload.url.strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="Debe ser una URL válida que comience con http:// o https://")
+    try:
+        import requests
+        resp = requests.head(url, timeout=10, allow_redirects=True)
+        content_type = resp.headers.get("Content-Type", "")
+        content_length = resp.headers.get("Content-Length")
+        size_mb = round(int(content_length) / (1024 * 1024), 2) if content_length and content_length.isdigit() else None
+        return {
+            "valid": True,
+            "url": url,
+            "content_type": content_type,
+            "size_mb": size_mb,
+            "msg": "Enlace de video válido y accesible",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"No se pudo acceder al enlace: {e}")
 
 @app.get("/api/settings")
 def get_settings():
@@ -125,6 +206,19 @@ def test_service_credentials(service: str):
         except Exception as e:
             return {"status": "error", "msg": f"Fallo de conexión con OpenAI: {e}"}
 
+    elif service == "neon":
+        try:
+            url = data.get("DATABASE_URL")
+            if not url:
+                return {"status": "error", "msg": "DATABASE_URL no configurada en .env"}
+            ok = db.init_db()
+            if ok:
+                return {"status": "ok", "msg": "Conexión exitosa con Neon PostgreSQL"}
+            else:
+                return {"status": "error", "msg": "Fallo al conectar con Neon PostgreSQL. Revisa la URL y sslmode=require"}
+        except Exception as e:
+            return {"status": "error", "msg": f"Error conectando a Neon: {e}"}
+
     else:
         raise HTTPException(status_code=400, detail="Servicio desconocido")
 
@@ -140,13 +234,27 @@ def list_assets():
 
 
 @app.get("/api/projects")
-def get_projects():
-    return projects.list_projects()
+def get_projects(request: Request):
+    auth_header = request.headers.get("Authorization")
+    user_id = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        payload = db.decode_access_token(token)
+        if payload:
+            user_id = payload.get("user_id")
+    return projects.list_projects(user_id=user_id)
 
 
 @app.post("/api/projects")
-def create_new_project(payload: ProjectCreate):
-    p = projects.create_project(payload.dict())
+def create_new_project(payload: ProjectCreate, request: Request):
+    data = payload.dict()
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        u = db.decode_access_token(token)
+        if u:
+            data["user_id"] = u.get("user_id")
+    p = projects.create_project(data)
     return p
 
 
@@ -185,13 +293,20 @@ def run_step(project_id: str, step_name: str, payload: StepRunRequest):
         python_bin, "-m", "server.worker", project_id, step_name, "--args", json.dumps(payload.args)
     ]
 
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+
     proc = subprocess.Popen(
         cmd,
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
+        env=env,
     )
 
     JOBS[job_id] = {

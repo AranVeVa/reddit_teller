@@ -267,6 +267,9 @@ def generate_image(prompt: str, scene_num: int, model: str = "gpt-image-1", visu
             if resp.status_code != 200:
                 last_error = resp.text
                 ui.warn(f"  Image API error ({resp.status_code}) en intento {attempt}: {last_error[:200]}")
+                if model != "dall-e-3" and ("model" in last_error.lower() or "not exist" in last_error.lower()):
+                    ui.warn(f"  Modelo '{model}' no disponible en la cuenta, recurriendo a 'dall-e-3'...")
+                    return generate_image(prompt, scene_num, model="dall-e-3", visual_bible=visual_bible)
                 # If it's a safety/rate trigger, don't retry immediately
                 if "content_policy_violation" in last_error or "safety" in last_error.lower() or resp.status_code == 400:
                     return None, last_error

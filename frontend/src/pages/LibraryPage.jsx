@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import { Film, Download, RefreshCw, HardDrive, Play, Mic, Music, Video, Upload, CheckCircle2 } from "lucide-react";
 import Button from "../components/ui/Button";
 import CheckAnimation from "../components/ui/CheckAnimation";
-import { fetchLibrary, uploadMediaFile } from "../api/client";
+import { fetchLibrary, uploadMediaFile, getMediaUrl } from "../api/client";
 
 export default function LibraryPage() {
   const [libraryData, setLibraryData] = useState(null);
@@ -242,7 +242,7 @@ export default function LibraryPage() {
                   <div className="aspect-[9/16] max-h-[520px] mx-auto bg-[#0E0D0F] rounded-xl overflow-hidden border border-[#2A262E] shadow-2xl">
                     <video
                       key={selectedItem.path}
-                      src={`/media/${selectedItem.path}`}
+                      src={getMediaUrl(`/media/${selectedItem.path}`)}
                       controls
                       autoPlay
                       className="w-full h-full object-contain"
@@ -263,7 +263,7 @@ export default function LibraryPage() {
                     </div>
                     <audio
                       key={selectedItem.path}
-                      src={`/media/${selectedItem.path}`}
+                      src={getMediaUrl(`/media/${selectedItem.path}`)}
                       controls
                       autoPlay
                       className="w-full accent-[#E5484D]"
@@ -283,7 +283,7 @@ export default function LibraryPage() {
                   </div>
 
                   <a
-                    href={`/media/${selectedItem.path}`}
+                    href={getMediaUrl(`/media/${selectedItem.path}`)}
                     download={selectedItem.name}
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#9F1D20] hover:bg-[#B3261E] text-[#ECE7E1] text-xs font-bold rounded-xl shadow-lg shadow-[#9F1D20]/30 transition-all cursor-pointer shrink-0"
                   >

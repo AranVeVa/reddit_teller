@@ -1,10 +1,21 @@
-const API_BASE = "/api";
+export const SERVER_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/api\/?$/, "").replace(/\/$/, "");
+export const API_BASE = `${SERVER_BASE}/api`;
+
+export function getMediaUrl(path) {
+  if (!path) return "";
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${SERVER_BASE}${cleanPath}`;
+}
 
 export async function apiRequest(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem("rt_token") : null;
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
   const response = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
       ...(options.headers || {}),
     },
     ...options,
@@ -14,7 +25,15 @@ export async function apiRequest(endpoint, options = {}) {
     let errMessage = `API Error ${response.status}`;
     try {
       const errData = await response.json();
-      errMessage = errData.detail || errData.msg || errMessage;
+      if (typeof errData.detail === "string") {
+        errMessage = errData.detail;
+      } else if (Array.isArray(errData.detail)) {
+        errMessage = errData.detail.map((d) => d.msg || JSON.stringify(d)).join(", ");
+      } else if (errData.detail) {
+        errMessage = JSON.stringify(errData.detail);
+      } else if (errData.msg) {
+        errMessage = errData.msg;
+      }
     } catch (_) {}
     throw new Error(errMessage);
   }
@@ -132,4 +151,50 @@ export function subscribeJobEvents(jobId, onEvent, onError, onComplete) {
   };
 
   return () => eventSource.close();
+}
+
+
+export async function registerUser(email, password) {
+  const data = await apiRequest("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  if (data?.user?.token) {
+    localStorage.setItem("rt_token", data.user.token);
+  }
+  return data;
+}
+
+export async function loginUser(email, password) {
+  const data = await apiRequest("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  if (data?.user?.token) {
+    localStorage.setItem("rt_token", data.user.token);
+  }
+  return data;
+}
+
+export async function fetchCurrentUser() {
+  return apiRequest("/auth/me");
+}
+
+export function logoutUser() {
+  localStorage.removeItem("rt_token");
+}
+
+export async function fetchStorageStatus() {
+  return apiRequest("/storage/status");
+}
+
+export async function triggerStorageCleanup() {
+  return apiRequest("/storage/cleanup", { method: "POST" });
+}
+
+export async function validateVideoLink(url) {
+  return apiRequest("/links/validate_video", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
 }

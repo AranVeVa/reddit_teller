@@ -5,10 +5,27 @@ import unicodedata
 
 _ASSETS = Path(__file__).parent.parent / "assets" / "Redditcards"
 
-# Path config
-FONT_SANS = "/usr/share/fonts/TTF/DejaVuSans.ttf"
-FONT_SANS_BOLD = "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"
-FONT_EMOJI = "/usr/share/fonts/noto/NotoColorEmoji.ttf"
+def _resolve_font(*candidates: str) -> str:
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[0] if candidates else ""
+
+# Path config (Linux, Windows fallback)
+FONT_SANS = _resolve_font(
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/segoeui.ttf"
+)
+FONT_SANS_BOLD = _resolve_font(
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/segoeuib.ttf"
+)
+FONT_EMOJI = _resolve_font(
+    "/usr/share/fonts/noto/NotoColorEmoji.ttf",
+    "C:/Windows/Fonts/seguiemj.ttf"
+)
 TEMPLATE_LIGHT = str(_ASSETS / "reddit-story.png")
 TEMPLATE_DARK  = str(_ASSETS / "reddit-story-dark.png")
 

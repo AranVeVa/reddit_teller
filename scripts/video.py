@@ -1,5 +1,5 @@
 from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, ImageClip, concatenate_videoclips
-from moviepy.video.fx import Crop, Resize, FadeIn, FadeOut
+from moviepy.video.fx import Crop, Resize, FadeIn, FadeOut, Loop
 import math
 from pathlib import Path
 from PIL import Image as PILImage
@@ -10,6 +10,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import VIDEOS_DIR, VIDEO_WIDTH, VIDEO_HEIGHT, FONT_PATH
 from scripts import termui as ui
 from scripts.subtitles import _parse_srt
+import tempfile
+import requests
+from server.storage import cleanup_storage_if_needed
 
 
 def _crop_to_vertical(clip):
@@ -69,6 +72,27 @@ def create_video(
         output_path = sub_dir / f"{base_name}.mp4"
 
     temp_cards = []
+    temp_bg_file = None
+    cleanup_storage_if_needed()
+
+    # Soporte para URL remota de video de fondo (para no ocupar espacio en disco)
+    bg_str = str(background_video)
+    if not is_clip_object and (bg_str.startswith('http://') or bg_str.startswith('https://')):
+        try:
+            ui.info(f'Descargando video de fondo temporal desde URL: {bg_str[:60]}...')
+            temp_bg = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            temp_bg_file = Path(temp_bg.name)
+            temp_bg.close()
+            with requests.get(bg_str, stream=True, timeout=180) as r:
+                r.raise_for_status()
+                with open(temp_bg_file, 'wb') as vf:
+                    for chunk in r.iter_content(chunk_size=1024 * 1024):
+                        vf.write(chunk)
+            background_video = temp_bg_file
+            ui.success('Video de fondo descargado en archivo temporal.')
+        except Exception as err:
+            ui.error(f'Error al descargar video desde URL ({err}). Intentando continuar.')
+
     try:
         audio = AudioFileClip(str(audio_path))
 
@@ -77,8 +101,15 @@ def create_video(
             video = background_video
         else:
             video = VideoFileClip(str(background_video))
+            needed_duration = start_second + audio.duration
+            if video.duration < needed_duration:
+                loops_needed = int(math.ceil(needed_duration / max(video.duration, 0.1))) + 1
+                video = video.with_effects([Loop(n=loops_needed)])
+
+            end_second = min(start_second + audio.duration, video.duration)
             # Recortar a partir del segundo indicado
-            video = video.subclipped(start_second, start_second + audio.duration)
+            video = video.subclipped(start_second, end_second)
+            video = video.with_duration(audio.duration)
 
         # Crop y escala a 9:16
         video = _crop_to_vertical(video)
@@ -295,5 +326,12 @@ def create_video(
                 tc.unlink(missing_ok=True)
             except Exception:
                 pass
+        if temp_bg_file and temp_bg_file.exists():
+            try:
+                temp_bg_file.unlink()
+                ui.info('Video de fondo temporal eliminado (espacio liberado).')
+            except Exception:
+                pass
+        cleanup_storage_if_needed()
 
     return None

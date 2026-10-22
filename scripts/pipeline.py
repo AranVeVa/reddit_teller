@@ -197,7 +197,10 @@ def step_generate_subtitles(
 
 def step_plan_scenes(story_id: str, model: str = "gpt-image-1") -> dict:
     """Crea el desglose de escenas (scenes.json) con GPT-4o sin generar aún las imágenes."""
-    return plan_scenes(story_id, model=model)
+    plan = plan_scenes(story_id, model=model)
+    if not plan:
+        raise RuntimeError("Fallo al generar plan de escenas con OpenAI. Verifica que tu OPENAI_API_KEY esté configurada y con saldo disponible en https://platform.openai.com")
+    return plan
 
 
 def step_render_scenes(story_id: str, model: str = "gpt-image-1") -> str:
@@ -227,6 +230,7 @@ def step_render_video(
     start_second: int = 0,
     srt_path: str = None,
     dark_mode: bool = False,
+    fast_mode: bool = False,
 ) -> str:
     """Ensambla el video final con MoviePy."""
     mixed_path = Path(mixed_audio_path)
@@ -253,6 +257,7 @@ def step_render_video(
         historias=historias,
         story_offsets=story_offsets,
         dark_mode=dark_mode,
+        fast_mode=fast_mode,
     )
 
     if not out_video_path or not out_video_path.exists():

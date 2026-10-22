@@ -3,3 +3,7 @@ requests
 moviepy
 openai-whisper
 python-dotenv
+fastapi
+uvicorn
+python-multipart
+psycopg[binary]
