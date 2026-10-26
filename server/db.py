@@ -117,6 +117,16 @@ def init_db() -> bool:
                         is_verified = COALESCE(is_verified, FALSE)
                     WHERE role IS NULL OR is_premium IS NULL OR is_verified IS NULL;
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS projects (
+                        id VARCHAR(64) PRIMARY KEY,
+                        user_id VARCHAR(64),
+                        data JSONB NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    );
+                """) 
+                
             conn.commit()
         logger.info("✔ Base de datos Neon inicializada correctamente.")
         return True
@@ -447,3 +457,67 @@ def has_premium_access(user: dict | None) -> bool:
     if user.get("role") == ROLE_ADMIN:
         return True
     return bool(user.get("is_premium"))
+# ── Proyectos (Pipeline) ───────────────────────────────────────────────────
+
+def db_get_project(project_id: str) -> dict | None:
+    if not is_db_enabled():
+        return None
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT data FROM projects WHERE id = %s;", (project_id,))
+                row = cur.fetchone()
+                if row:
+                    return row["data"]
+    except Exception as e:
+        logger.error(f"Error obteniendo proyecto {project_id}: {e}")
+    return None
+
+def db_save_project(project_data: dict) -> None:
+    if not is_db_enabled():
+        return
+    project_id = project_data["id"]
+    user_id = project_data.get("user_id")
+    
+    # Convertimos el diccionario a un string JSON para guardarlo en PostgreSQL
+    import json
+    data_json = json.dumps(project_data)
+    
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO projects (id, user_id, data)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE
+                    SET user_id = EXCLUDED.user_id,
+                        data = EXCLUDED.data,
+                        updated_at = CURRENT_TIMESTAMP;
+                    """,
+                    (project_id, user_id, data_json)
+                )
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error guardando proyecto {project_id}: {e}")
+
+def db_list_projects(user_id: str | None = None) -> list[dict]:
+    if not is_db_enabled():
+        return []
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                if user_id:
+                    cur.execute(
+                        "SELECT data FROM projects WHERE user_id = %s ORDER BY created_at DESC;",
+                        (user_id,)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT data FROM projects WHERE user_id IS NULL ORDER BY created_at DESC;"
+                    )
+                
+                return [row["data"] for row in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"Error listando proyectos: {e}")
+        return []
