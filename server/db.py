@@ -1,7 +1,3 @@
-"""
-server/db.py — Capa de persistencia para PostgreSQL en Neon.tech (o local).
-Soporta usuarios, proyectos por usuario y almacenamiento en la nube gratuita de Neon.
-"""
 import os
 import json
 import uuid
@@ -10,313 +6,444 @@ import hmac
 import hashlib
 import base64
 import logging
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from pathlib import Path
+
+import bcrypt
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).parent.parent.resolve()
 load_dotenv(ROOT / ".env")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-SECRET_KEY = os.getenv("JWT_SECRET", "reddit_teller_secret_key_2026")
-LOCAL_USERS_FILE = ROOT / "projects" / "users.json"
-
 logger = logging.getLogger("reddit_teller.db")
 
 
-# ── Seguridad y Tokens ───────────────────────────────────────────────────────
+# ── Constantes ─────────────────────────────────────────────────────────────
 
-def hash_password(password: str) -> str:
-    salt = os.urandom(16).hex()
-    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
-    return f"{salt}${key}"
+ROLE_ADMIN = "Super Admin"
+ROLE_USER = "Usuario"
 
-
-def verify_password(stored_hash: str, password: str) -> bool:
-    try:
-        salt, key = stored_hash.split("$")
-        new_key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
-        return hmac.compare_digest(new_key, key)
-    except Exception:
-        return False
+VERIFICATION_TTL = timedelta(hours=1)
+ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7   # 7 días
 
 
-def create_access_token(user_id: str, email: str) -> str:
-    payload = json.dumps({"user_id": user_id, "email": email, "exp": time.time() + 86400 * 30})
-    b64_payload = base64.urlsafe_b64encode(payload.encode()).decode()
-    signature = hmac.new(SECRET_KEY.encode(), b64_payload.encode(), hashlib.sha256).hexdigest()
-    return f"{b64_payload}.{signature}"
+# ── Excepciones ────────────────────────────────────────────────────────────
+
+class DatabaseNotConfigured(Exception):
+    """DATABASE_URL ausente o inválida."""
 
 
-def decode_access_token(token: str) -> dict | None:
-    try:
-        b64_payload, signature = token.split(".")
-        expected_sig = hmac.new(SECRET_KEY.encode(), b64_payload.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected_sig):
-            return None
-        payload = json.loads(base64.urlsafe_b64decode(b64_payload.encode()).decode())
-        if payload.get("exp", 0) < time.time():
-            return None
-        return payload
-    except Exception:
-        return None
+class EmailAlreadyRegistered(Exception):
+    """El correo ya tiene cuenta."""
 
 
-# ── Conexión Neon PostgreSQL ────────────────────────────────────────────────
+class ValidationError(Exception):
+    """Datos de entrada inválidos."""
+
+
+class InvalidToken(Exception):
+    """Token inválido, expirado o ya consumido."""
+
+
+class InvalidCredentials(Exception):
+    """Correo o contraseña incorrectos."""
+
+
+class EmailNotVerified(Exception):
+    """Falta verificar el correo."""
+
+
+# ── Conexión ───────────────────────────────────────────────────────────────
 
 def is_db_enabled() -> bool:
-    """Retorna True si hay una URL de base de datos PostgreSQL configurada."""
     url = os.getenv("DATABASE_URL", "").strip()
     return bool(url and ("postgres://" in url or "postgresql://" in url))
 
 
 def get_connection():
-    """Crea una conexión con psycopg a PostgreSQL (Neon)."""
+    if not is_db_enabled():
+        raise DatabaseNotConfigured(
+            "DATABASE_URL no está configurada. Añádela al .env con sslmode=require."
+        )
     import psycopg
     from psycopg.rows import dict_row
 
     url = os.getenv("DATABASE_URL", "").strip()
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-
     return psycopg.connect(url, row_factory=dict_row)
 
 
-def init_db():
-    """Inicializa las tablas necesarias en Neon PostgreSQL si no existen."""
+def init_db() -> bool:
     if not is_db_enabled():
         return False
-
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                # Tabla de usuarios
+                # Tabla base (creación nueva)
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id VARCHAR(64) PRIMARY KEY,
                         email VARCHAR(128) UNIQUE NOT NULL,
                         password_hash VARCHAR(256) NOT NULL,
+                        role VARCHAR(32) DEFAULT 'Usuario',
+                        is_premium BOOLEAN DEFAULT FALSE,
+                        is_verified BOOLEAN DEFAULT FALSE,
+                        verification_token_hash VARCHAR(128),
+                        verification_expires TIMESTAMP WITH TIME ZONE,
                         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
-                # Tabla de proyectos vinculados al usuario
+
+                # Migraciones idempotentes: añaden columnas si la tabla ya
+                # existía de una versión anterior sin ellas.
                 cur.execute("""
-                    CREATE TABLE IF NOT EXISTS projects (
-                        id VARCHAR(64) PRIMARY KEY,
-                        user_id VARCHAR(64),
-                        created_at VARCHAR(64),
-                        current_step INT DEFAULT 1,
-                        subreddit VARCHAR(128) DEFAULT '',
-                        data JSONB NOT NULL,
-                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    );
+                    ALTER TABLE users
+                        ADD COLUMN IF NOT EXISTS role VARCHAR(32) DEFAULT 'Usuario',
+                        ADD COLUMN IF NOT EXISTS is_premium BOOLEAN DEFAULT FALSE,
+                        ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE,
+                        ADD COLUMN IF NOT EXISTS verification_token_hash VARCHAR(128),
+                        ADD COLUMN IF NOT EXISTS verification_expires TIMESTAMP WITH TIME ZONE,
+                        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
                 """)
-                # Ajustes globales
+
+                # Rellenar NULLs por si la migración añadió columnas a filas viejas.
                 cur.execute("""
-                    CREATE TABLE IF NOT EXISTS app_settings (
-                        key VARCHAR(128) PRIMARY KEY,
-                        value TEXT,
-                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                    );
+                    UPDATE users
+                    SET role = COALESCE(role, 'Usuario'),
+                        is_premium = COALESCE(is_premium, FALSE),
+                        is_verified = COALESCE(is_verified, FALSE)
+                    WHERE role IS NULL OR is_premium IS NULL OR is_verified IS NULL;
                 """)
             conn.commit()
-            logger.info("✔ Base de datos Neon inicializada correctamente con tabla de usuarios y proyectos.")
-            return True
+        logger.info("✔ Base de datos Neon inicializada correctamente.")
+        return True
     except Exception as e:
-        logger.warning(f"No se pudo inicializar la BD Neon ({e}). Usando almacenamiento local.")
+        logger.warning(f"Error inicializando BD Neon: {e}")
         return False
 
+# ── Hashing ────────────────────────────────────────────────────────────────
 
-# ── Gestión de Usuarios ─────────────────────────────────────────────────────
+def hash_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
-def _load_local_users() -> dict[str, dict]:
-    LOCAL_USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if not LOCAL_USERS_FILE.exists():
-        return {}
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_password(password: str, hashed: str) -> bool:
     try:
-        return json.loads(LOCAL_USERS_FILE.read_text(encoding="utf-8"))
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
-        return {}
+        return False
 
 
-def _save_local_users(users: dict[str, dict]):
-    LOCAL_USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LOCAL_USERS_FILE.write_text(json.dumps(users, indent=2, ensure_ascii=False), encoding="utf-8")
+# ── Validación ─────────────────────────────────────────────────────────────
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def register_user(email: str, password: str) -> dict[str, Any] | None:
-    """Registra un nuevo usuario en Neon o localmente."""
-    email_clean = email.strip().lower()
-    pw_hash = hash_password(password)
-    user_id = str(uuid.uuid4())[:8]
-
-    if is_db_enabled():
-        try:
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id FROM users WHERE email = %s;", (email_clean,))
-                    if cur.fetchone():
-                        return None  # Ya existe
-                    cur.execute(
-                        "INSERT INTO users (id, email, password_hash) VALUES (%s, %s, %s);",
-                        (user_id, email_clean, pw_hash)
-                    )
-                conn.commit()
-            token = create_access_token(user_id, email_clean)
-            return {"user_id": user_id, "email": email_clean, "token": token}
-        except Exception as e:
-            logger.error(f"Error registrando usuario en Neon: {e}")
-
-    # Fallback local
-    users = _load_local_users()
-    for u in users.values():
-        if u.get("email") == email_clean:
-            return None  # Ya existe
-    users[user_id] = {
-        "id": user_id,
-        "email": email_clean,
-        "password_hash": pw_hash,
-        "created_at": time.time(),
-    }
-    _save_local_users(users)
-    token = create_access_token(user_id, email_clean)
-    return {"user_id": user_id, "email": email_clean, "token": token}
+def _validate_registration(email: str, password: str) -> str:
+    email_clean = (email or "").strip().lower()
+    if not _EMAIL_RE.match(email_clean):
+        raise ValidationError("El correo electrónico no tiene un formato válido")
+    if not password or len(password) < 8:
+        raise ValidationError("La contraseña debe tener al menos 8 caracteres")
+    return email_clean
 
 
-def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
-    """Verifica credenciales y retorna sesión de usuario."""
-    email_clean = email.strip().lower()
+# ── Access token (HMAC-SHA256, sin PyJWT) ──────────────────────────────────
 
-    if is_db_enabled():
-        try:
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id, email, password_hash FROM users WHERE email = %s;", (email_clean,))
-                    row = cur.fetchone()
-                    if row and verify_password(row["password_hash"], password):
-                        token = create_access_token(row["id"], row["email"])
-                        return {"user_id": row["id"], "email": row["email"], "token": token}
-        except Exception as e:
-            logger.error(f"Error autenticando en Neon: {e}")
-
-    # Fallback local
-    users = _load_local_users()
-    for uid, u in users.items():
-        if u.get("email") == email_clean:
-            if verify_password(u.get("password_hash", ""), password):
-                token = create_access_token(uid, email_clean)
-                return {"user_id": uid, "email": email_clean, "token": token}
-    return None
+def _secret_key() -> str:
+    return os.getenv("SECRET_KEY") or os.getenv("JWT_SECRET") or "dev-insecure-secret-change-me"
 
 
-def get_user_profile(user_id: str) -> dict[str, Any] | None:
-    """Obtiene perfil de usuario sin hash."""
-    if is_db_enabled():
-        try:
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id, email, created_at FROM users WHERE id = %s;", (user_id,))
-                    row = cur.fetchone()
-                    if row:
-                        return {"id": row["id"], "email": row["email"]}
-        except Exception as e:
-            logger.error(f"Error obteniendo usuario en Neon: {e}")
-
-    # Fallback local
-    users = _load_local_users()
-    u = users.get(user_id)
-    if u:
-        return {"id": u["id"], "email": u["email"]}
-    return None
+def _b64e(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
-# ── Gestión de Proyectos ────────────────────────────────────────────────────
+def _b64d(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (4 - len(s) % 4))
 
-def db_save_project(project_data: dict[str, Any]) -> bool:
-    """Guarda o actualiza un proyecto en Neon PostgreSQL."""
+
+def _sign(payload_b64: str) -> str:
+    sig = hmac.new(_secret_key().encode(), payload_b64.encode(), hashlib.sha256).digest()
+    return _b64e(sig)
+
+
+def create_access_token(user_id: str) -> str:
+    now = int(time.time())
+    payload = {"user_id": user_id, "iat": now, "exp": now + ACCESS_TOKEN_TTL_SECONDS}
+    payload_b64 = _b64e(json.dumps(payload, separators=(",", ":")).encode())
+    return f"{payload_b64}.{_sign(payload_b64)}"
+
+
+def decode_access_token(token: str) -> dict | None:
+    if not token or "." not in token:
+        return None
+    try:
+        payload_b64, sig = token.split(".", 1)
+    except ValueError:
+        return None
+    if not hmac.compare_digest(_sign(payload_b64), sig):
+        return None
+    try:
+        payload = json.loads(_b64d(payload_b64))
+    except Exception:
+        return None
+    if int(payload.get("exp", 0)) < int(time.time()):
+        return None
+    return payload
+
+
+# ── Serialización pública ──────────────────────────────────────────────────
+
+_PUBLIC_USER_FIELDS = ("id", "email", "role", "is_premium", "is_verified", "created_at")
+
+
+def public_user(user: dict) -> dict:
+    return {k: user.get(k) for k in _PUBLIC_USER_FIELDS if k in user}
+
+
+# ── Registro y verificación ────────────────────────────────────────────────
+
+def register_user(email: str, password: str) -> dict[str, Any]:
+    email_clean = _validate_registration(email, password)
     if not is_db_enabled():
-        return False
+        raise DatabaseNotConfigured("DATABASE_URL no está configurada")
 
-    project_id = project_data.get("id")
-    if not project_id:
-        return False
-
-    user_id = project_data.get("user_id")
+    user_id = str(uuid.uuid4())[:8]
+    pw_hash = hash_password(password)
+    raw_token = str(uuid.uuid4())
+    token_hash = hash_token(raw_token)
+    expires_at = datetime.now(timezone.utc) + VERIFICATION_TTL
 
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO projects (id, user_id, created_at, current_step, subreddit, data, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (id) DO UPDATE SET
-                        user_id = COALESCE(EXCLUDED.user_id, projects.user_id),
-                        current_step = EXCLUDED.current_step,
-                        subreddit = EXCLUDED.subreddit,
-                        data = EXCLUDED.data,
-                        updated_at = CURRENT_TIMESTAMP;
-                """, (
-                    project_id,
-                    user_id,
-                    str(project_data.get("created_at", "")),
-                    project_data.get("current_step", 1),
-                    project_data.get("subreddit", ""),
-                    json.dumps(project_data, ensure_ascii=False)
-                ))
+                cur.execute("SELECT id FROM users WHERE email = %s;", (email_clean,))
+                if cur.fetchone():
+                    raise EmailAlreadyRegistered()
+                cur.execute(
+                    """
+                    INSERT INTO users
+                        (id, email, password_hash, role, is_premium, is_verified,
+                         verification_token_hash, verification_expires)
+                    VALUES (%s, %s, %s, %s, FALSE, FALSE, %s, %s);
+                    """,
+                    (user_id, email_clean, pw_hash, ROLE_USER, token_hash, expires_at),
+                )
             conn.commit()
-            return True
+    except EmailAlreadyRegistered:
+        raise
     except Exception as e:
-        logger.error(f"Error al guardar proyecto {project_id} en Neon: {e}")
-        return False
+        logger.error(f"Error registrando usuario en Neon: {e}")
+        raise ValidationError("Error interno al procesar el registro")
+
+    return {
+        "user": {
+            "id": user_id,
+            "email": email_clean,
+            "role": ROLE_USER,
+            "is_premium": False,
+            "is_verified": False,
+        },
+        "verification_token": raw_token,
+    }
 
 
-def db_get_project(project_id: str) -> dict[str, Any] | None:
-    """Obtiene un proyecto por su ID desde Neon PostgreSQL."""
+def verify_email(raw_token: str) -> None:
+    if not is_db_enabled():
+        raise DatabaseNotConfigured("DATABASE_URL no está configurada")
+
+    token_hash = hash_token(raw_token)
+    now = datetime.now(timezone.utc)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, is_verified, verification_expires FROM users WHERE verification_token_hash = %s;",
+                (token_hash,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise InvalidToken()
+            if row["is_verified"]:
+                return  # idempotente
+            if row["verification_expires"] and row["verification_expires"] < now:
+                raise InvalidToken()
+            cur.execute(
+                """
+                UPDATE users
+                SET is_verified = TRUE,
+                    verification_token_hash = NULL,
+                    verification_expires = NULL
+                WHERE id = %s;
+                """,
+                (row["id"],),
+            )
+        conn.commit()
+
+
+def regenerate_verification_token(email: str) -> dict | None:
+    """Devuelve {'email', 'verification_token'} o None si no procede (silencioso)."""
     if not is_db_enabled():
         return None
+    email_clean = (email or "").strip().lower()
+    raw_token = str(uuid.uuid4())
+    token_hash = hash_token(raw_token)
+    expires_at = datetime.now(timezone.utc) + VERIFICATION_TTL
 
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT data FROM projects WHERE id = %s;", (project_id,))
+                cur.execute("SELECT id, is_verified FROM users WHERE email = %s;", (email_clean,))
                 row = cur.fetchone()
-                if row and "data" in row:
-                    data = row["data"]
-                    return json.loads(data) if isinstance(data, str) else data
+                if not row or row["is_verified"]:
+                    return None
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET verification_token_hash = %s, verification_expires = %s
+                    WHERE id = %s;
+                    """,
+                    (token_hash, expires_at, row["id"]),
+                )
+            conn.commit()
+            return {"email": email_clean, "verification_token": raw_token}
     except Exception as e:
-        logger.error(f"Error al obtener proyecto {project_id} de Neon: {e}")
-    return None
+        logger.error(f"Error regenerando token: {e}")
+        return None
 
 
-def db_list_projects(user_id: str | None = None) -> list[dict[str, Any]]:
-    """Lista proyectos desde Neon PostgreSQL (filtrando por user_id si se especifica)."""
+# ── Autenticación ──────────────────────────────────────────────────────────
+
+def authenticate_user(email: str, password: str) -> dict[str, Any]:
+    if not is_db_enabled():
+        raise DatabaseNotConfigured("DATABASE_URL no está configurada")
+    email_clean = (email or "").strip().lower()
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, password_hash, role, is_premium, is_verified "
+                    "FROM users WHERE email = %s;",
+                    (email_clean,),
+                )
+                user = cur.fetchone()
+    except Exception as e:
+        logger.error(f"Error autenticando usuario: {e}")
+        raise InvalidCredentials()
+
+    if not user or not _verify_password(password, user["password_hash"]):
+        raise InvalidCredentials()
+    if not user.get("is_verified"):
+        raise EmailNotVerified()
+
+    user.pop("password_hash", None)
+    return {
+        "user": public_user(user),
+        "token": create_access_token(user["id"]),
+    }
+
+
+# ── Consultas / Admin ──────────────────────────────────────────────────────
+
+def get_user(user_id: str) -> dict | None:
+    if not is_db_enabled() or not user_id:
+        return None
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, role, is_premium, is_verified, created_at "
+                    "FROM users WHERE id = %s;",
+                    (user_id,),
+                )
+                return cur.fetchone()
+    except Exception as e:
+        logger.error(f"Error obteniendo usuario {user_id}: {e}")
+        return None
+
+
+def list_users() -> list[dict]:
     if not is_db_enabled():
         return []
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, role, is_premium, is_verified, created_at "
+                    "FROM users ORDER BY created_at DESC;"
+                )
+                return cur.fetchall()
+    except Exception as e:
+        logger.error(f"Error listando usuarios: {e}")
+        return []
+
+
+def count_super_admins() -> int:
+    if not is_db_enabled():
+        return 0
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS n FROM users WHERE role = %s;", (ROLE_ADMIN,))
+                row = cur.fetchone()
+                return int(row["n"]) if row else 0
+    except Exception as e:
+        logger.error(f"Error contando super admins: {e}")
+        return 0
+
+
+def update_user_access(
+    user_id: str,
+    role: str | None = None,
+    is_premium: bool | None = None,
+) -> dict:
+    if not is_db_enabled():
+        raise DatabaseNotConfigured("DATABASE_URL no está configurada")
+    if role is None and is_premium is None:
+        raise ValidationError("Nada que actualizar")
+    if role is not None and (not isinstance(role, str) or not role.strip() or len(role) > 32):
+        raise ValidationError("Rol inválido")
+
+    sets, params = [], []
+    if role is not None:
+        sets.append("role = %s")
+        params.append(role.strip())
+    if is_premium is not None:
+        sets.append("is_premium = %s")
+        params.append(bool(is_premium))
+    params.append(user_id)
 
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                if user_id:
-                    cur.execute(
-                        "SELECT data FROM projects WHERE user_id = %s OR user_id IS NULL ORDER BY updated_at DESC;",
-                        (user_id,)
-                    )
-                else:
-                    cur.execute("SELECT data FROM projects ORDER BY updated_at DESC;")
-                rows = cur.fetchall()
-                results = []
-                for r in rows:
-                    data = r["data"]
-                    results.append(json.loads(data) if isinstance(data, str) else data)
-                return results
+                cur.execute(
+                    f"UPDATE users SET {', '.join(sets)} WHERE id = %s "
+                    f"RETURNING id, email, role, is_premium, is_verified, created_at;",
+                    tuple(params),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValidationError("Usuario no encontrado")
+            conn.commit()
+            return row
+    except ValidationError:
+        raise
     except Exception as e:
-        logger.error(f"Error al listar proyectos desde Neon: {e}")
-        return []
-# ── Ejecución directa de prueba / inicialización ────────────────────────────
+        logger.error(f"Error actualizando usuario {user_id}: {e}")
+        raise ValidationError("Error interno al actualizar el usuario")
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    if init_db():
-        print("Tablas creadas exitosamente en Neon.")
-    else:
-        print("No se pudieron crear las tablas. Revisa que DATABASE_URL esté en el .env.")
+
+def has_premium_access(user: dict | None) -> bool:
+    if not user:
+        return False
+    if user.get("role") == ROLE_ADMIN:
+        return True
+    return bool(user.get("is_premium"))

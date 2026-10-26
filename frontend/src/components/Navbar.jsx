@@ -1,53 +1,33 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { motion } from "motion/react";
-import { Sparkles, Library, Settings, Film, User, HardDrive, LogOut, Trash2 } from "lucide-react";
-import AuthModal from "./ui/AuthModal";
-import { fetchCurrentUser, logoutUser, fetchStorageStatus, triggerStorageCleanup } from "../api/client";
+import { Sparkles, Library, Settings, Film, User, LogOut, ShieldCheck, Crown, HardDrive, Trash2 } from "lucide-react";
 
-export default function Navbar({ currentTab, setCurrentTab }) {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [storageStats, setStorageStats] = useState(null);
+export default function Navbar({
+  currentTab,
+  setCurrentTab,
+  currentUser,
+  onLoginClick,
+  onLogout,
+  onUpgradeRequest,
+  storage
+}) {
+  // 1. Lógica de roles
+  const isAdmin = currentUser?.role === "Super Admin";
+  const hasPremium = currentUser?.is_premium || isAdmin;
 
+  // 2. Pestañas dinámicas (agrega Admin solo si es Super Admin)
   const tabs = [
     { id: "studio", label: "ESTUDIO DE PRODUCCIÓN", icon: Sparkles },
     { id: "library", label: "BIBLIOTECA", icon: Library },
     { id: "settings", label: "AJUSTES & CREDENCIALES", icon: Settings },
+    ...(isAdmin ? [{ id: "admin", label: "PANEL ADMIN", icon: ShieldCheck }] : []),
   ];
-
-  useEffect(() => {
-    loadUserAndStorage();
-    const interval = setInterval(loadStorage, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadUserAndStorage = async () => {
-    try {
-      const res = await fetchCurrentUser();
-      if (res.authenticated && res.user) {
-        setCurrentUser(res.user);
-      }
-    } catch (_) {}
-    loadStorage();
-  };
-
-  const loadStorage = async () => {
-    try {
-      const stats = await fetchStorageStatus();
-      setStorageStats(stats);
-    } catch (_) {}
-  };
-
-  const handleLogout = () => {
-    logoutUser();
-    setCurrentUser(null);
-  };
 
   const handleCleanupStorage = async () => {
     if (window.confirm("¿Deseas ejecutar la limpieza para eliminar videos antiguos y liberar espacio?")) {
       try {
-        await triggerStorageCleanup();
-        loadStorage();
+        // Esta función la importaremos de tu client.js si la necesitas aquí, 
+        // pero por ahora lo ideal es que App.jsx maneje el storage.
       } catch (e) {
         console.error(e);
       }
@@ -78,7 +58,7 @@ export default function Navbar({ currentTab, setCurrentTab }) {
         {/* Floating Centered Navigation Tabs */}
         <nav
           aria-label="Navegación principal"
-          className="flex items-center gap-6 md:gap-8"
+          className="flex items-center gap-1 lg:gap-4 xl:gap-8"
         >
           {tabs.map((t) => {
             const Icon = t.icon;
@@ -91,7 +71,6 @@ export default function Navbar({ currentTab, setCurrentTab }) {
                 className="relative flex items-center gap-2 px-4 py-2 text-sm font-bold font-mono tracking-wider cursor-pointer select-none transition-colors duration-200"
                 style={{ color: isActive ? "#ECE7E1" : "#8E8780" }}
               >
-                {/* Active Pill Indicator */}
                 {isActive && (
                   <motion.div
                     layoutId="activeNavPill"
@@ -108,38 +87,54 @@ export default function Navbar({ currentTab, setCurrentTab }) {
 
         {/* Right Section: Storage & User Profile */}
         <div className="flex items-center gap-3">
+
           {/* Storage quota pill */}
-          {storageStats && (
+          {storage && (
             <div
-              title={`Almacenamiento: ${storageStats.used_mb}MB / ${storageStats.max_mb}MB (${storageStats.percent}%). Los videos antiguos se borran automáticamente al llenar el espacio.`}
+              title={`Almacenamiento: ${storage.used_mb}MB / ${storage.max_mb}MB.`}
               className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-[#141217] border border-[#2A262E] rounded-xl text-xs font-mono text-[#8E8780]"
             >
-              <HardDrive
-                className={`w-3.5 h-3.5 ${
-                  storageStats.is_near_limit ? "text-amber-400 animate-pulse" : "text-[#E5484D]"
-                }`}
-              />
-              <span className="text-[#ECE7E1] font-bold">{storageStats.used_mb}MB</span>
-              <span className="text-[10px] text-[#6E6760]">/ {storageStats.max_mb}MB</span>
-              <button
-                onClick={handleCleanupStorage}
-                title="Limpiar videos antiguos manualmente"
-                className="p-1 hover:text-[#E5484D] rounded transition-colors cursor-pointer ml-0.5"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
+              <HardDrive className="w-3.5 h-3.5 text-[#E5484D]" />
+              <span className="text-[#ECE7E1] font-bold">{storage.used_mb}MB</span>
+              <span className="text-[10px] text-[#6E6760]">/ {storage.max_mb}MB</span>
             </div>
           )}
 
           {/* User Button */}
           {currentUser ? (
             <div className="flex items-center gap-2 pl-2 border-l border-[#2A262E]">
+
+              {/* Botón Mejorar a Pro (Solo si no es premium) */}
+              {!hasPremium && (
+                <button
+                  onClick={onUpgradeRequest}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-xl text-xs font-mono font-bold transition-colors cursor-pointer"
+                >
+                  <Crown className="w-3.5 h-3.5" />
+                  <span>Mejorar a Pro</span>
+                </button>
+              )}
+
+              {/* Perfil del usuario */}
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#141217] border border-[#2A262E] rounded-xl text-xs font-mono text-[#ECE7E1]">
                 <User className="w-3.5 h-3.5 text-[#E5484D]" />
                 <span className="max-w-[120px] truncate">{currentUser.email}</span>
+
+                {/* Badge dinámico (Admin, Pro o Free) */}
+                <span
+                  className={`text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase ${isAdmin
+                      ? "bg-[#9F1D20]/20 text-[#E5484D] border-[#E5484D]/40"
+                      : hasPremium
+                        ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                        : "bg-[#232029] text-[#8E8780] border-[#2A262E]"
+                    }`}
+                >
+                  {isAdmin ? "Admin" : hasPremium ? "Pro" : "Free"}
+                </span>
               </div>
+
               <button
-                onClick={handleLogout}
+                onClick={onLogout}
                 title="Cerrar sesión"
                 className="p-2 text-[#8E8780] hover:text-[#E5484D] hover:bg-[#141217] rounded-xl transition-colors cursor-pointer"
               >
@@ -148,7 +143,7 @@ export default function Navbar({ currentTab, setCurrentTab }) {
             </div>
           ) : (
             <button
-              onClick={() => setShowAuthModal(true)}
+              onClick={onLoginClick}
               className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#1E1A24] hover:bg-[#2A2433] border border-[#E5484D]/40 text-[#ECE7E1] rounded-xl text-xs font-mono font-bold transition-all shadow-sm cursor-pointer"
             >
               <User className="w-3.5 h-3.5 text-[#E5484D]" />
@@ -157,15 +152,6 @@ export default function Navbar({ currentTab, setCurrentTab }) {
           )}
         </div>
       </header>
-
-      <AuthModal
-        isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onAuthSuccess={(user) => {
-          setCurrentUser(user);
-          loadStorage();
-        }}
-      />
     </>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import PipelineRail from "../../components/studio/PipelineRail";
 import PreviewPanel from "../../components/studio/PreviewPanel";
@@ -10,7 +10,7 @@ import VoiceStep from "./VoiceStep";
 import SubtitlesStep from "./SubtitlesStep";
 import BackgroundStep from "./BackgroundStep";
 import RenderStep from "./RenderStep";
-import { createProject, getProject, runProjectStep, subscribeJobEvents, cancelJob } from "../../api/client";
+import { getProject, runProjectStep, subscribeJobEvents, cancelJob } from "../../api/client";
 
 const stepComponents = {
   1: SourceStep,
@@ -22,22 +22,18 @@ const stepComponents = {
   7: RenderStep,
 };
 
-export default function StudioPage() {
-  const [project, setProject] = useState(null);
+export default function StudioPage({ currentUser, onUpgradeRequest }) {
+  const [project, setProject] = useState({
+    id: crypto.randomUUID(),
+    subreddit: "nosleep",
+    background_type: "video"
+  });
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [activeJobId, setActiveJobId] = useState(null);
   const [events, setEvents] = useState([]);
   const prevStepRef = useRef(1);
 
-  useEffect(() => {
-    // Inicializar o cargar proyecto por defecto
-    createProject({ subreddit: "nosleep" })
-      .then((p) => setProject(p))
-      .catch(console.error);
-  }, []);
-
-  // Track direction for slide animation
   const handleStepChange = (newStep) => {
     prevStepRef.current = currentStep;
     setCurrentStep(newStep);
@@ -45,7 +41,6 @@ export default function StudioPage() {
 
   const slideDirection = currentStep > prevStepRef.current ? 1 : -1;
 
-  // Helper for immediate React state update
   const handleUpdateProjectState = (partialData) => {
     setProject((prev) => (prev ? { ...prev, ...partialData } : prev));
   };
@@ -69,7 +64,6 @@ export default function StudioPage() {
           setLoading(false);
         },
         async () => {
-          // Job complete: refresh project state from backend
           const updated = await getProject(project.id);
           setProject(updated);
           setLoading(false);
@@ -99,20 +93,14 @@ export default function StudioPage() {
     }
   };
 
-  if (!project) {
-    return (
-      <div className="p-12 text-center text-[#8E8780] font-mono text-xs">
-        Iniciando estudio de producción...
-      </div>
-    );
-  }
-
   const StepComponent = stepComponents[currentStep];
   const stepProps = {
     project,
     onRunStep: handleRunStep,
     loading,
     onUpdateProject: handleUpdateProjectState,
+    currentUser,
+    onUpgradeRequest,
     ...(currentStep === 7 ? { events, onCancelJob: handleCancelActiveJob } : {}),
   };
 
@@ -121,7 +109,6 @@ export default function StudioPage() {
       className="flex h-[calc(100vh-4rem)] overflow-hidden relative"
       style={{ backgroundColor: "#0E0D0F" }}
     >
-      {/* 1. Left Pipeline Rail */}
       <PipelineRail
         currentStep={currentStep}
         setCurrentStep={handleStepChange}
@@ -129,7 +116,6 @@ export default function StudioPage() {
         loading={loading}
       />
 
-      {/* 2. Center Workspace with Animated Step Transitions */}
       <main className="flex-1 overflow-hidden relative" style={{ backgroundColor: "#0E0D0F" }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
@@ -146,10 +132,8 @@ export default function StudioPage() {
         </AnimatePresence>
       </main>
 
-      {/* 3. Right Preview Panel */}
       <PreviewPanel project={project} />
 
-      {/* 4. OS Floating Log Window */}
       <FloatingTerminal
         events={events}
         isRunning={loading}

@@ -24,3 +24,32 @@ dist-ssr
 *.sw?
 
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+reddit-env/
+venv/
+.venv/
+
+# Variables de Entorno (¡VITAL!)
+.env
+.env.local
+.env.*
+frontend/.env
+frontend/.env.local
+
+# Node / React
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# Archivos generados
+outputs/
+background_audio/
+background_videos/
+
+# Sistema
+.DS_Store
+Thumbs.db

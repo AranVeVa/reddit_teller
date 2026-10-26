@@ -28,11 +28,28 @@ from scripts import pipeline
 from scripts import termui as ui
 
 
+AI_STEPS = {"plan_scenes", "render_scenes", "regenerate_scene"}
+
+
+def _step_uses_ai(step_name: str, args_data: dict, project: dict) -> bool:
+    if step_name in AI_STEPS:
+        return True
+    if step_name == "render_video":
+        return bool(args_data.get("use_scenes", project.get("background_type") == "scenes"))
+    return False
+
+
 def run_worker_step(project_id: str, step_name: str, args_data: dict):
     ui.info(f"Worker iniciado para proyecto {project_id} - paso '{step_name}'")
     project = get_project(project_id)
     if not project:
         ui.error(f"Proyecto {project_id} no existe")
+        sys.exit(1)
+
+    # Defensa en profundidad: el API ya valida, pero el worker nunca llama a GPT-4o /
+    # DALL-E 3 si el servidor no marcó expresamente al usuario como Premium / Super Admin.
+    if _step_uses_ai(step_name, args_data, project) and os.environ.get("RT_ALLOW_AI") != "1":
+        ui.error("Las escenas con IA requieren una suscripción Premium. No se consumieron créditos de OpenAI.")
         sys.exit(1)
 
     try:

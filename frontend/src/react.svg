@@ -1,0 +1,260 @@
+export const SERVER_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/api\/?$/, "").replace(/\/$/, "");
+export const API_BASE = `${SERVER_BASE}/api`;
+
+export function getMediaUrl(path) {
+  if (!path) return "";
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${SERVER_BASE}${cleanPath}`;
+}
+
+export async function apiRequest(endpoint, options = {}) {
+  const url = `${API_BASE}${endpoint}`;
+  let token = null;
+  try { token = localStorage.getItem("rt_token"); } catch (_) { }
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+  const response = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+
+  if (!response.ok) {
+    let errMessage = `API Error ${response.status}`;
+    try {
+      const errData = await response.json();
+      if (typeof errData.detail === "string") {
+        errMessage = errData.detail;
+      } else if (Array.isArray(errData.detail)) {
+        errMessage = errData.detail.map((d) => d.msg || JSON.stringify(d)).join(", ");
+      } else if (errData.detail) {
+        errMessage = JSON.stringify(errData.detail);
+      } else if (errData.msg) {
+        errMessage = errData.msg;
+      }
+    } catch (_) { }
+    const err = new Error(errMessage);
+    err.status = response.status;
+    throw err;
+  }
+
+  return response.json();
+}
+
+/** Acceso a funciones Premium (escenas IA): Premium, Super Admin o suscripción activa. */
+export function hasPremiumAccess(user) {
+  if (!user) return false;
+  return Boolean(user.hasPremiumAccess || user.isPremium || user.role === "Premium" || user.role === "Super Admin");
+}
+
+export async function verifyEmailToken(token) {
+  return apiRequest("/auth/verify-email", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function resendVerificationEmail(email) {
+  return apiRequest("/auth/resend-verification", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function fetchSettings() {
+  return apiRequest("/settings");
+}
+
+export async function updateSettings(settings) {
+  return apiRequest("/settings", {
+    method: "PUT",
+    body: JSON.stringify({ settings }),
+  });
+}
+
+export async function revealSetting(key) {
+  return apiRequest("/settings/reveal", {
+    method: "POST",
+    body: JSON.stringify({ key }),
+  });
+}
+
+export async function testServiceCredentials(service) {
+  return apiRequest(`/settings/test/${service}`, { method: "POST" });
+}
+
+export async function fetchAssets() {
+  return apiRequest("/assets");
+}
+
+/**
+ * Confirma el proyecto completo y lo guarda en Neon. Solo se llama al pulsar
+ * "Comenzar Renderizado Final": mientras tanto el proyecto vive en el estado de React.
+ */
+export async function commitProject(project) {
+  return apiRequest("/projects", {
+    method: "POST",
+    body: JSON.stringify(project),
+  });
+}
+
+export async function getProject(projectId) {
+  return apiRequest(`/projects/${projectId}`);
+}
+
+export async function updateProject(projectId, data) {
+  return apiRequest(`/projects/${projectId}`, {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+}
+
+export async function listProjects() {
+  return apiRequest("/projects");
+}
+
+export async function runProjectStep(projectId, stepName, args = {}, projectSnapshot = null) {
+  return apiRequest(`/projects/${projectId}/steps/${stepName}`, {
+    method: "POST",
+    body: JSON.stringify({ args, project: projectSnapshot }),
+  });
+}
+
+export async function cancelJob(jobId) {
+  return apiRequest(`/jobs/${jobId}/cancel`, { method: "POST" });
+}
+
+export async function fetchLibrary() {
+  return apiRequest("/library");
+}
+
+export async function uploadMediaFile(category, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const endpoint = category === "background_video" ? "/upload/background_video" : "/upload/background_audio";
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.detail || "Fallo al subir archivo");
+  }
+
+
+  return response.json();
+}
+
+export function subscribeJobEvents(jobId, onEvent, onError, onComplete) {
+  const eventSource = new EventSource(`${API_BASE}/jobs/${jobId}/events`);
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === "done") {
+        onEvent(data);
+        eventSource.close();
+        if (onComplete) onComplete(data);
+      } else if (data.type === "error" && data.level === "error") {
+        onEvent(data);
+        eventSource.close();
+        if (onError) onError(data);
+      } else {
+        onEvent(data);
+      }
+    } catch (e) {
+      console.error("SSE parse error", e);
+    }
+  };
+
+  eventSource.onerror = (err) => {
+    console.error("SSE Connection error", err);
+    eventSource.close();
+    if (onError) onError(err);
+  };
+
+  return () => eventSource.close();
+}
+
+
+export async function registerUser(email, password) {
+  // No inicia sesión: la cuenta debe verificarse por correo primero.
+  return apiRequest("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function loginUser(email, password) {
+  const data = await apiRequest("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  if (data?.token) {
+    try { localStorage.setItem("rt_token", data.token); } catch (_) { }
+  }
+  return data;
+}
+
+export async function fetchCurrentUser() {
+  return apiRequest("/auth/me");
+}
+
+export function logoutUser() {
+  try { localStorage.removeItem("rt_token"); } catch (_) { }
+}
+
+// ── Panel Super Admin ──
+export async function fetchAdminUsers() {
+  return apiRequest("/admin/users");
+}
+
+export async function updateAdminUser(userId, changes) {
+  return apiRequest(`/admin/users/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
+// ── Pagos ──
+export async function fetchPaymentConfig() {
+  return apiRequest("/payments/config");
+}
+
+export async function createCheckoutSession() {
+  return apiRequest("/payments/checkout", { method: "POST" });
+}
+
+export async function confirmCheckout(sessionId) {
+  return apiRequest("/payments/confirm", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+}
+
+export async function simulatePayment(outcome) {
+  return apiRequest("/payments/simulate", {
+    method: "POST",
+    body: JSON.stringify({ outcome }),
+  });
+}
+
+export async function fetchStorageStatus() {
+  return apiRequest("/storage/status");
+}
+
+export async function triggerStorageCleanup() {
+  return apiRequest("/storage/cleanup", { method: "POST" });
+}
+
+export async function validateVideoLink(url) {
+  return apiRequest("/links/validate_video", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}

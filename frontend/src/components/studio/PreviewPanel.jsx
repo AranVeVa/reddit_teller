@@ -4,7 +4,7 @@ import { Play, Volume2, Info, Image as ImageIcon } from "lucide-react";
 export default function PreviewPanel({ project }) {
   const selectedStory = project?.accepted_stories?.[0] || project?.candidates?.[0];
   const subreddit = project?.subreddit || "nosleep";
-  const darkCard = project?.dark_mode ?? True;
+  const darkCard = project?.dark_mode ?? true;
 
   return (
     <aside className="w-80 bg-[#17151A] border-l border-[#2E2A31] p-4 space-y-4 shrink-0 overflow-y-auto hidden xl:block">

@@ -56,6 +56,55 @@ def get_storage_stats() -> dict[str, Any]:
     }
 
 
+def _delete_files(files: list[Path]) -> tuple[list[str], int]:
+    deleted, freed = [], 0
+    for f in files:
+        try:
+            size = f.stat().st_size
+            f.unlink()
+            deleted.append(f.name)
+            freed += size
+        except OSError as e:
+            logger.warning(f"No se pudo borrar {f}: {e}")
+    return deleted, freed
+
+
+def _prune_empty_dirs(root: Path) -> None:
+    if not root.exists():
+        return
+    for d in sorted((p for p in root.rglob("*") if p.is_dir()), reverse=True):
+        try:
+            d.rmdir()  # solo borra si está vacío
+        except OSError:
+            pass
+
+
+def cleanup_storage_manual() -> dict[str, Any]:
+    """
+    Limpieza solicitada por el usuario: elimina los audios generados (voz y mezclas,
+    se pueden regenerar) y todos los renders antiguos, conservando el MP4 más reciente.
+    """
+    before = get_storage_stats()
+    audio_files = [f for d in (AUDIOS_DIR, MIXED_DIR) if d.exists() for f in d.rglob("*") if f.is_file()]
+    videos = sorted((f for f in VIDEOS_DIR.rglob("*") if f.is_file()), key=lambda f: f.stat().st_mtime) if VIDEOS_DIR.exists() else []
+    old_videos = videos[:-1]  # conserva el render más reciente
+
+    deleted_a, freed_a = _delete_files(audio_files)
+    deleted_v, freed_v = _delete_files(old_videos)
+    for d in (AUDIOS_DIR, MIXED_DIR, VIDEOS_DIR):
+        _prune_empty_dirs(d)
+
+    after = get_storage_stats()
+    return {
+        "cleaned": bool(deleted_a or deleted_v),
+        "deleted_count": len(deleted_a) + len(deleted_v),
+        "deleted_files": deleted_a + deleted_v,
+        "freed_mb": round((freed_a + freed_v) / (1024 * 1024), 2),
+        "previous_used_mb": before["used_mb"],
+        "current_used_mb": after["used_mb"],
+    }
+
+
 def cleanup_storage_if_needed(target_free_margin_mb: int = 50) -> dict[str, Any]:
     """
     Si el espacio usado excede el límite máximo configurado, elimina los archivos

@@ -1,128 +1,38 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Image as ImageIcon, Video, Sparkles, Edit3, CheckCircle2, Link as LinkIcon, Globe, Check } from "lucide-react";
-import Field from "../../components/ui/Field";
+import React, { useState } from "react";
+import { Sparkles, Video, Lock, Image as ImageIcon, ChevronRight } from "lucide-react";
 import Button from "../../components/ui/Button";
-import { fetchAssets, updateProject, getMediaUrl, validateVideoLink } from "../../api/client";
+import Field from "../../components/ui/Field";
 
-export default function BackgroundStep({ project, onRunStep, loading, onUpdateProject }) {
-  const [bgType, setBgType] = useState(project?.background_type || "scenes");
-  const [assets, setAssets] = useState(null);
-  const [selectedClassicVideo, setSelectedClassicVideo] = useState(project?.background_video_path || "");
-  const [startSecond, setStartSecond] = useState(project?.start_second || 0);
-  const [classicSourceType, setClassicSourceType] = useState(
-    (project?.background_video_path || "").startsWith("http") ? "url" : "local"
-  );
-  const [videoUrlInput, setVideoUrlInput] = useState(
-    (project?.background_video_path || "").startsWith("http") ? project.background_video_path : ""
-  );
-  const [urlValidating, setUrlValidating] = useState(false);
-  const [urlSuccess, setUrlSuccess] = useState(false);
+export default function BackgroundStep({ project, onRunStep, loading, onUpdateProject, currentUser, onUpgradeRequest }) {
+  const [showPaywall, setShowPaywall] = useState(false);
 
-  const [editingSceneNum, setEditingSceneNum] = useState(null);
-  const [editedPrompt, setEditedPrompt] = useState("");
-  const [cacheBuster, setCacheBuster] = useState(Date.now());
+  const isPremium = currentUser?.role === "premium" || currentUser?.role === "Super Admin" || currentUser?.isPremium;
+  const isScenes = project?.background_type === "scenes";
 
-  const videoRef = useRef(null);
-  const [videoDuration, setVideoDuration] = useState(0);
+  const handleSelectType = (type) => {
+    onUpdateProject({ background_type: type });
+  };
 
-  useEffect(() => {
-    fetchAssets().then((res) => {
-      setAssets(res);
-      if (!selectedClassicVideo && res?.background_videos?.length > 0) {
-        const defaultVid = res.background_videos[0];
-        setSelectedClassicVideo(defaultVid);
-        saveBackgroundConfig(bgType, defaultVid, startSecond);
-      }
-    }).catch(console.error);
-  }, []);
-
-  // Update backend project AND local React state immediately
-  const saveBackgroundConfig = async (newType, newVideo, newStart) => {
-    const typeToSave = newType !== undefined ? newType : bgType;
-    const videoToSave = newVideo !== undefined ? newVideo : selectedClassicVideo;
-    const startToSave = newStart !== undefined ? newStart : startSecond;
-
-    setBgType(typeToSave);
-    if (newVideo !== undefined) setSelectedClassicVideo(newVideo);
-    if (newStart !== undefined) setStartSecond(newStart);
-
-    // Sync React state in memory immediately so Render step sees it instantly
-    if (onUpdateProject) {
-      onUpdateProject({
-        background_type: typeToSave,
-        background_video_path: videoToSave,
-        start_second: startToSave,
-      });
+  const handleGeneratePlan = () => {
+    if (!isPremium) {
+      setShowPaywall(true);
+      return;
     }
+    onRunStep("generate_scene_plan");
+  };
 
-    if (project?.id) {
-      try {
-        await updateProject(project.id, {
-          background_type: typeToSave,
-          background_video_path: videoToSave,
-          start_second: startToSave,
-        });
-      } catch (err) {
-        console.error("Error al guardar configuración de fondo:", err);
-      }
+  const handleGenerateImages = () => {
+    if (!isPremium) {
+      setShowPaywall(true);
+      return;
     }
+    onRunStep("generate_images");
   };
-
-  const handlePlanScenes = () => {
-    saveBackgroundConfig("scenes", selectedClassicVideo, startSecond);
-    onRunStep("plan_scenes", { model: "gpt-image-1" });
-  };
-
-  const handleRenderScenes = () => {
-    saveBackgroundConfig("scenes", selectedClassicVideo, startSecond);
-    onRunStep("render_scenes", { model: "gpt-image-1" });
-    setCacheBuster(Date.now());
-  };
-
-  const handleRegenerateScene = (sceneNum) => {
-    onRunStep("regenerate_scene", {
-      scene_number: sceneNum,
-      prompt: editedPrompt || undefined,
-      model: "gpt-image-1",
-    });
-    setEditingSceneNum(null);
-    setCacheBuster(Date.now());
-  };
-
-
-  const handleApplyVideoUrl = async () => {
-    if (!videoUrlInput.trim()) return;
-    setUrlValidating(true);
-    setUrlSuccess(false);
-    try {
-      await validateVideoLink(videoUrlInput.trim());
-      setSelectedClassicVideo(videoUrlInput.trim());
-      saveBackgroundConfig("classic", videoUrlInput.trim(), startSecond);
-      setUrlSuccess(true);
-      setTimeout(() => setUrlSuccess(false), 3000);
-    } catch (e) {
-      alert("Error con el enlace de video: " + (e.message || e));
-    } finally {
-      setUrlValidating(false);
-    }
-  };
-
-  const handleSetTimeAsStart = () => {
-    if (videoRef.current) {
-      const sec = Math.floor(videoRef.current.currentTime);
-      setStartSecond(sec);
-      saveBackgroundConfig("classic", selectedClassicVideo, sec);
-    }
-  };
-
-  const plan = project?.scenes_plan;
-  const scenes = plan?.scenes || [];
-  const scenesRendered = project?.scenes_rendered;
 
   return (
-    <div className="space-y-6 w-full max-w-5xl mx-auto animate-fade-in">
-      <div className="border-b border-[#2A262E] pb-4">
-        <h2 className="text-2xl font-black font-display text-[#ECE7E1] uppercase tracking-wider">
+    <div className="space-y-6 w-full max-w-5xl mx-auto animate-fade-in relative">
+      <div>
+        <h2 className="text-2xl font-black font-display text-[#ECE7E1] uppercase tracking-wider flex items-center gap-3">
           6. Configuración del Fondo (Escenas IA vs Clásico)
         </h2>
         <p className="text-xs text-[#8E8780] mt-1">
@@ -130,356 +40,129 @@ export default function BackgroundStep({ project, onRunStep, loading, onUpdatePr
         </p>
       </div>
 
-      {/* Background Type Switcher Tabs */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <button
           type="button"
-          onClick={() => saveBackgroundConfig("scenes")}
-          className={`p-5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
-            bgType === "scenes"
-              ? "bg-[#1E1A24] border-[#E5484D] text-[#ECE7E1] shadow-xl shadow-[#E5484D]/10 scale-[1.01]"
-              : "bg-[#141217] border-[#2A262E] text-[#8E8780] hover:border-[#3D3844] hover:text-[#ECE7E1]"
-          }`}
+          onClick={() => handleSelectType("scenes")}
+          className={`text-left p-5 rounded-2xl border transition-all relative overflow-hidden ${isScenes
+              ? "bg-[#141217] border-[#E5484D] shadow-[0_0_15px_rgba(229,72,77,0.1)]"
+              : "bg-[#0E0D0F] border-[#2A262E] hover:border-[#8E8780]"
+            }`}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className={`w-5 h-5 ${bgType === "scenes" ? "text-[#E5484D]" : "text-[#8E8780]"}`} />
-            <span className="font-bold text-sm text-[#ECE7E1]">Escenas IA (Recomendado)</span>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className={`w-5 h-5 ${isScenes ? "text-[#E5484D]" : "text-[#8E8780]"}`} />
+              <span className={`font-bold text-sm ${isScenes ? "text-[#ECE7E1]" : "text-[#8E8780]"}`}>
+                Escenas IA (Recomendado)
+              </span>
+            </div>
+            {!isPremium && (
+              <span className="px-2 py-1 bg-amber-500/10 text-amber-400 text-[10px] rounded border border-amber-500/20 flex items-center gap-1">
+                <Lock className="w-3 h-3" /> PRO
+              </span>
+            )}
           </div>
           <p className="text-xs text-[#8E8780] leading-relaxed">
             GPT-4o analiza la historia y genera imágenes de escenas en estilo visual 3D con animación Ken Burns.
           </p>
-          {bgType === "scenes" && (
-            <div className="absolute top-0 right-0 w-3 h-3 bg-[#E5484D] rounded-bl-lg" />
-          )}
         </button>
 
         <button
           type="button"
-          onClick={() => saveBackgroundConfig("classic")}
-          className={`p-5 rounded-2xl border text-left transition-all cursor-pointer relative overflow-hidden ${
-            bgType === "classic"
-              ? "bg-[#1E1A24] border-[#E5484D] text-[#ECE7E1] shadow-xl shadow-[#E5484D]/10 scale-[1.01]"
-              : "bg-[#141217] border-[#2A262E] text-[#8E8780] hover:border-[#3D3844] hover:text-[#ECE7E1]"
-          }`}
+          onClick={() => handleSelectType("video")}
+          className={`text-left p-5 rounded-2xl border transition-all ${!isScenes
+              ? "bg-[#141217] border-[#E5484D] shadow-[0_0_15px_rgba(229,72,77,0.1)]"
+              : "bg-[#0E0D0F] border-[#2A262E] hover:border-[#8E8780]"
+            }`}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <Video className={`w-5 h-5 ${bgType === "classic" ? "text-[#E5484D]" : "text-[#8E8780]"}`} />
-            <span className="font-bold text-sm text-[#ECE7E1]">Video Clásico</span>
+          <div className="flex items-center gap-2 mb-3">
+            <Video className={`w-5 h-5 ${!isScenes ? "text-[#E5484D]" : "text-[#8E8780]"}`} />
+            <span className={`font-bold text-sm ${!isScenes ? "text-[#ECE7E1]" : "text-[#8E8780]"}`}>
+              Video Clásico
+            </span>
           </div>
           <p className="text-xs text-[#8E8780] leading-relaxed">
             Usa un video de fondo de alta resolución (Minecraft, Subway Surfers, Parkour) recortado dinámicamente.
           </p>
-          {bgType === "classic" && (
-            <div className="absolute top-0 right-0 w-3 h-3 bg-[#E5484D] rounded-bl-lg" />
-          )}
         </button>
       </div>
 
-      {/* Option A: AI Scenes */}
-      {bgType === "scenes" && (
-        <div className="bg-[#141217] border border-[#2A262E] rounded-2xl p-6 space-y-6">
-          <div className="flex items-center justify-between border-b border-[#2A262E] pb-4">
-            <div>
-              <h3 className="text-sm font-bold text-[#ECE7E1] flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#E5484D]" />
-                Generador de Escenas IA (gpt-image-1 / DALL-E 3)
-              </h3>
-              <p className="text-xs text-[#8E8780] mt-0.5">
-                Paso 1: Generar plan de escenas con GPT-4o • Paso 2: Renderizar imágenes PNG
-              </p>
+      {isScenes && (
+        <div className="bg-[#141217] border border-[#2A262E] rounded-2xl p-6 space-y-5 animate-fade-in">
+          <div className="flex items-center gap-3 border-b border-[#2A262E] pb-4">
+            <div className="w-8 h-8 rounded-lg bg-[#9F1D20]/20 border border-[#E5484D]/30 flex items-center justify-center text-[#E5484D]">
+              <ImageIcon className="w-4 h-4" />
             </div>
-
-            <div className="flex items-center gap-3">
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={loading && !plan}
-                onClick={handlePlanScenes}
-              >
-                {plan ? "Regenerar Plan GPT" : "1. Generar Plan de Escenas"}
-              </Button>
-
-              {plan && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={Sparkles}
-                  loading={loading}
-                  onClick={handleRenderScenes}
-                >
-                  {scenesRendered ? "Volver a Renderizar Imágenes" : "2. Renderizar Imágenes PNG"}
-                </Button>
-              )}
+            <div>
+              <h3 className="text-sm font-bold text-[#ECE7E1]">Generador de Escenas IA (gpt-4o / DALL-E 3)</h3>
+              <p className="text-[10px] text-[#8E8780] uppercase tracking-wider mt-0.5">
+                Paso 1: Generar plan de escenas • Paso 2: Renderizar imágenes PNG
+              </p>
             </div>
           </div>
 
-          {/* Visual Bible */}
-          {plan?.visual_bible && (
-            <div className="p-3 bg-[#0E0D0F] border border-[#2A262E] rounded-xl text-xs space-y-1">
-              <span className="font-bold text-[#E5484D] uppercase tracking-wider text-[10px]">
-                Visual Bible (Estilo Visual del Video):
-              </span>
-              <p className="text-[#8E8780] font-mono leading-relaxed line-clamp-3">
-                {plan.visual_bible}
-              </p>
+          <div className="flex items-center justify-between bg-[#0E0D0F] p-4 rounded-xl border border-[#2A262E]">
+            <div className="flex items-center gap-3">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#2A262E] text-xs font-bold text-[#8E8780]">1</span>
+              <span className="text-sm font-medium text-[#ECE7E1]">Estructurar Plan Visual</span>
             </div>
-          )}
+            <Button
+              variant={!isPremium ? "secondary" : "primary"}
+              size="sm"
+              onClick={handleGeneratePlan}
+              loading={loading}
+              icon={!isPremium ? Lock : ChevronRight}
+              className={!isPremium ? "text-amber-400 border-amber-900/50 hover:bg-amber-950/30" : ""}
+            >
+              1. Generar Plan de Escenas
+            </Button>
+          </div>
 
-          {/* Live Scenes Grid */}
-          {scenes.length > 0 && (
-            <div className="space-y-4">
-              <h4 className="text-xs font-semibold text-[#ECE7E1] uppercase tracking-wider flex items-center gap-2">
-                <span>Escenas del Plan ({scenes.length})</span>
-                {scenesRendered && (
-                  <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> PNGs Listos
-                  </span>
-                )}
-              </h4>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {scenes.map((s) => {
-                  const isEditing = editingSceneNum === s.scene_number;
-                  const subreddit = project?.subreddit || "nosleep";
-                  const storyId = project?.accepted_stories?.[0]?.id;
-                  const imgUrl = getMediaUrl(`/media/scenes/${subreddit}/${storyId}/scene_${String(s.scene_number).padStart(2, "0")}.png?t=${cacheBuster}`);
-
-                  return (
-                    <div
-                      key={s.scene_number}
-                      className="bg-[#0E0D0F] border border-[#2A262E] rounded-xl p-4 space-y-3 text-xs"
-                    >
-                      <div className="flex items-center justify-between border-b border-[#2A262E] pb-2">
-                        <span className="font-bold font-mono text-[#ECE7E1] flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-[#E5484D]" />
-                          Escena #{s.scene_number} ({s.time_start}s - {s.time_end}s)
-                        </span>
-                        <span className="text-[10px] text-[#8E8780] font-mono bg-[#1A181F] px-2 py-0.5 rounded">
-                          {s.narrative_beat}
-                        </span>
-                      </div>
-
-                      {/* Scene Live Image Preview */}
-                      <div className="aspect-[9/16] max-h-56 bg-[#1A181F] rounded-xl border border-[#2A262E] overflow-hidden relative flex items-center justify-center group">
-                        <img
-                          src={imgUrl}
-                          alt={`Escena ${s.scene_number}`}
-                          onError={(e) => {
-                            e.target.style.display = "none";
-                            if (e.target.nextSibling) {
-                              e.target.nextSibling.style.display = "flex";
-                            }
-                          }}
-                          onLoad={(e) => {
-                            e.target.style.display = "block";
-                            if (e.target.nextSibling) {
-                              e.target.nextSibling.style.display = "none";
-                            }
-                          }}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center p-3 text-center bg-[#141217]">
-                          <ImageIcon className="w-8 h-8 text-[#5C554E] mb-2 animate-pulse" />
-                          <span className="text-[11px] text-[#8E8780] font-mono font-medium">
-                            {loading ? "Generando PNG con IA..." : "PNG pendiente de renderizado"}
-                          </span>
-                        </div>
-                      </div>
-
-                      {isEditing ? (
-                        <div className="space-y-2 pt-1">
-                          <textarea
-                            rows={3}
-                            value={editedPrompt}
-                            onChange={(e) => setEditedPrompt(e.target.value)}
-                            className="w-full p-2 bg-[#1A181F] border border-[#E5484D] rounded-lg font-mono text-[11px] text-[#ECE7E1]"
-                          />
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setEditingSceneNum(null)}
-                            >
-                              Cancelar
-                            </Button>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              loading={loading}
-                              onClick={() => handleRegenerateScene(s.scene_number)}
-                            >
-                              Regenerar Escena
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-2 pt-1">
-                          <p className="text-[11px] text-[#8E8780] font-mono leading-relaxed line-clamp-2">
-                            {s.image_prompt}
-                          </p>
-                          <div className="flex justify-end">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              icon={Edit3}
-                              onClick={() => {
-                                setEditingSceneNum(s.scene_number);
-                                setEditedPrompt(s.image_prompt);
-                              }}
-                            >
-                              Editar Prompt
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+          {project?.scene_plan && (
+            <div className="flex items-center justify-between bg-[#0E0D0F] p-4 rounded-xl border border-[#2A262E] animate-fade-in">
+              <div className="flex items-center gap-3">
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-[#2A262E] text-xs font-bold text-[#8E8780]">2</span>
+                <span className="text-sm font-medium text-[#ECE7E1]">Renderizar en DALL-E 3</span>
               </div>
+              <Button
+                variant={!isPremium ? "secondary" : "primary"}
+                size="sm"
+                onClick={handleGenerateImages}
+                loading={loading}
+                icon={!isPremium ? Lock : Sparkles}
+                className={!isPremium ? "text-amber-400 border-amber-900/50 hover:bg-amber-950/30" : ""}
+              >
+                2. Generar Imágenes
+              </Button>
             </div>
           )}
         </div>
       )}
 
-      {/* Option B: Classic Video with Preview Player */}
-      {bgType === "classic" && (
-        <div className="bg-[#141217] border border-[#2A262E] rounded-2xl p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 border-b border-[#2A262E] pb-2">
-                  <button
-                    type="button"
-                    onClick={() => setClassicSourceType("local")}
-                    className={`px-3 py-1.5 text-xs font-mono font-bold rounded-lg transition-colors cursor-pointer ${
-                      classicSourceType === "local"
-                        ? "bg-[#E5484D] text-white"
-                        : "text-[#8E8780] hover:text-[#ECE7E1]"
-                    }`}
-                  >
-                    Videos del Servidor
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setClassicSourceType("url")}
-                    className={`px-3 py-1.5 text-xs font-mono font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                      classicSourceType === "url"
-                        ? "bg-[#E5484D] text-white"
-                        : "text-[#8E8780] hover:text-[#ECE7E1]"
-                    }`}
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    Enlace URL (Ahorra Espacio)
-                  </button>
-                </div>
-
-                {classicSourceType === "local" ? (
-                  <Field label="Seleccionar Video de Fondo">
-                    <select
-                      value={selectedClassicVideo}
-                      onChange={(e) => saveBackgroundConfig("classic", e.target.value, startSecond)}
-                      className="w-full px-4 py-2.5 bg-[#0E0D0F] border border-[#2A262E] focus:border-[#E5484D] rounded-xl text-sm font-semibold text-[#ECE7E1]"
-                    >
-                      {assets?.background_videos?.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                ) : (
-                  <Field
-                    label="Pegar Enlace Directo a Video MP4"
-                    description="No ocupa almacenamiento permanente en el servidor (se descarga temporalmente solo para el renderizado)"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <LinkIcon className="w-4 h-4 text-[#8E8780] absolute left-3 top-3 pointer-events-none" />
-                        <input
-                          type="url"
-                          value={videoUrlInput}
-                          onChange={(e) => setVideoUrlInput(e.target.value)}
-                          placeholder="https://ejemplo.com/gameplay.mp4"
-                          className="w-full pl-9 pr-4 py-2.5 bg-[#0E0D0F] border border-[#2A262E] focus:border-[#E5484D] rounded-xl text-xs font-mono text-[#ECE7E1]"
-                        />
-                      </div>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        loading={urlValidating}
-                        onClick={handleApplyVideoUrl}
-                        className="shrink-0"
-                      >
-                        {urlSuccess ? <Check className="w-4 h-4" /> : "Usar URL"}
-                      </Button>
-                    </div>
-                  </Field>
-                )}
-              </div>
-
-              <Field
-                label="Segundo de Inicio (start_second)"
-                description="Segundo del video donde iniciará el fragmento de fondo"
-              >
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max={Math.floor(videoDuration) || 9999}
-                    value={startSecond}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value) || 0;
-                      setStartSecond(val);
-                      saveBackgroundConfig("classic", selectedClassicVideo, val);
-                    }}
-                    className="w-full px-4 py-2.5 bg-[#0E0D0F] border border-[#2A262E] focus:border-[#E5484D] rounded-xl text-sm font-mono text-[#ECE7E1]"
-                  />
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleSetTimeAsStart}
-                    className="shrink-0"
-                  >
-                    Usar tiempo actual
-                  </Button>
-                </div>
-              </Field>
-
-              <div className="p-3.5 bg-[#0E0D0F] border border-[#2A262E] rounded-xl text-xs space-y-2 font-mono">
-                <div className="flex justify-between text-[#8E8780]">
-                  <span>Duración total video:</span>
-                  <span className="text-[#ECE7E1]">{Math.floor(videoDuration)}s</span>
-                </div>
-                <div className="flex justify-between text-[#8E8780]">
-                  <span>Punto de inicio elegido:</span>
-                  <span className="text-[#E5484D] font-bold">{startSecond}s</span>
-                </div>
-              </div>
+      {showPaywall && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#141217] border border-[#2A262E] rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl shadow-amber-900/20 text-center">
+            <div className="w-16 h-16 bg-gradient-to-tr from-amber-500 to-yellow-300 rounded-2xl mx-auto flex items-center justify-center mb-6 shadow-lg">
+              <Sparkles className="w-8 h-8 text-[#141217]" />
             </div>
+            <h3 className="text-xl font-black text-[#ECE7E1] mb-2 uppercase">Generación IA Premium</h3>
+            <p className="text-sm text-[#8E8780] mb-8">
+              El uso de modelos visuales como GPT-4o y DALL-E 3 consume créditos de API. Para continuar, actualiza tu plan a <strong className="text-amber-400">Pro</strong>.
+            </p>
 
-            {/* Video Preview Player */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-[#ECE7E1] uppercase tracking-wider block">
-                Previsualizador del Video de Fondo
-              </label>
-
-              {selectedClassicVideo ? (
-                <div className="aspect-[9/16] max-h-72 mx-auto bg-black rounded-xl overflow-hidden border border-[#2A262E] shadow-lg relative">
-                  <video
-                    ref={videoRef}
-                    src={selectedClassicVideo.startsWith("http://") || selectedClassicVideo.startsWith("https://") ? selectedClassicVideo : getMediaUrl(`/media/${selectedClassicVideo}`)}
-                    controls
-                    onLoadedMetadata={() => {
-                      if (videoRef.current) setVideoDuration(videoRef.current.duration);
-                    }}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              ) : (
-                <div className="aspect-[9/16] max-h-72 mx-auto bg-[#0E0D0F] rounded-xl border border-[#2A262E] flex items-center justify-center text-xs text-[#8E8780]">
-                  No se seleccionó video
-                </div>
-              )}
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => { setShowPaywall(false); onUpgradeRequest(); }}
+                className="w-full py-3 px-4 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-bold rounded-xl text-sm transition-all shadow-lg cursor-pointer"
+              >
+                Actualizar a Pro ($9.99/mes)
+              </button>
+              <button
+                onClick={() => setShowPaywall(false)}
+                className="w-full py-3 px-4 bg-transparent border border-[#2A262E] hover:bg-[#2A262E] text-[#8E8780] hover:text-[#ECE7E1] font-semibold rounded-xl text-sm transition-all cursor-pointer"
+              >
+                Volver y usar Video Clásico
+              </button>
             </div>
           </div>
         </div>
