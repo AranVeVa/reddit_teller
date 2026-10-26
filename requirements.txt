@@ -8,3 +8,7 @@ uvicorn
 python-multipart
 psycopg[binary]
 stripe
+bcrypt
+resend
+openai
+elevenlabs
